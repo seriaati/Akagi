@@ -306,6 +306,12 @@
     "bot_show_empty": "表示データがありません。",
     "bot_show_default_title": "Top 3",
     "proxy_control": "プロキシ",
+    "round_history": "局の履歴",
+    "round_history_empty": "まだ終了した局はありません。",
+    "round_history_result": "結果",
+    "round_history_tsumo": "{{winner}} ツモ",
+    "round_history_ron": "{{winner}} ロン ← {{loser}}",
+    "round_history_honba": "{{n}}本場",
     "dora": "ドラ",
     "phase": "フェーズ",
     "hide_x": "{{title}} を非表示"

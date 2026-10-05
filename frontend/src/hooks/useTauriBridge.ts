@@ -23,6 +23,7 @@ import { useApiStatusStore } from '@/stores/apiStatusStore'
 import { useInstallStore } from '@/stores/installStore'
 import { useConfigStore } from '@/stores/configStore'
 import { useHistoryStore } from '@/stores/historyStore'
+import { useRoundHistoryStore } from '@/stores/roundHistoryStore'
 import { toast, type ToastSeverity } from '@/components/ui/sonner'
 
 // Backend `Notification.level` ∈ {info,success,warn,error}; toast helper
@@ -99,6 +100,7 @@ export function useTauriBridge() {
       // Fresh game: clear any lingering online-API outage from the last one.
       if (e.type === 'start_game') useApiStatusStore.getState().reset()
       useNotifyStore.getState().pushEvent(e)
+      useRoundHistoryStore.getState().push(e)
       void refreshGame()
     }).then((u) => unlistens.push(u))
 

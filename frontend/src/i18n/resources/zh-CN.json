@@ -306,6 +306,12 @@
     "bot_show_empty": "尚无显示数据。",
     "bot_show_default_title": "前三选",
     "proxy_control": "代理",
+    "round_history": "本局记录",
+    "round_history_empty": "暂无已结束的小局。",
+    "round_history_result": "结果",
+    "round_history_tsumo": "{{winner}} 自摸",
+    "round_history_ron": "{{winner}} 荣和 ← {{loser}}",
+    "round_history_honba": "{{n}}本场",
     "dora": "宝牌",
     "phase": "阶段",
     "hide_x": "隐藏 {{title}}"

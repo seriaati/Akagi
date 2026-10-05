@@ -306,6 +306,12 @@
     "bot_show_empty": "No display data yet.",
     "bot_show_default_title": "Top 3",
     "proxy_control": "Proxy",
+    "round_history": "Round History",
+    "round_history_empty": "No finished hands yet.",
+    "round_history_result": "Result",
+    "round_history_tsumo": "{{winner}} Tsumo",
+    "round_history_ron": "{{winner}} Ron ← {{loser}}",
+    "round_history_honba": "{{n}} honba",
     "dora": "Dora",
     "phase": "Phase",
     "hide_x": "Hide {{title}}"
