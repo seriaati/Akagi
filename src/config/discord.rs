@@ -8,9 +8,9 @@ pub struct DiscordConfig {
     /// Off by default — a presence is broadcast to every Discord friend, so it
     /// is something the user opts into, not something they discover.
     pub enabled: bool,
-    /// Application (client) ID from the Discord Developer Portal. Discord
-    /// shows the application's name as "Playing <name>", so the user picks
-    /// what their friends see by picking the application. Empty ⇒ no
+    /// Application (client) ID from the Discord Developer Portal. The
+    /// presence overrides the application's name with the platform's
+    /// ("Playing Mahjong Soul"), so any application works. Empty ⇒ no
     /// presence, even when `enabled`.
     pub client_id: String,
 }

@@ -497,7 +497,7 @@
     "discord_enabled": "在 Discord 状态中显示对局",
     "discord_enabled_hint": "对局进行中时，你的 Discord 个人资料会显示平台、规则、当前局、名次与点数以及已进行时间。所有能看到你 Discord 活动的人都能看到。需要在本机运行 Discord。",
     "discord_client_id": "Discord 应用 ID",
-    "discord_client_id_hint": "在 discord.com/developers 创建一个应用并粘贴其 Application ID。Discord 会以“正在玩 …”显示该应用的名称。",
+    "discord_client_id_hint": "在 discord.com/developers 创建一个应用并粘贴其 Application ID。",
     "discord_client_id_invalid": "应用 ID 只能包含数字。"
   },
   "setup": {

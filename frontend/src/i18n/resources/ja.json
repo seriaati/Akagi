@@ -497,7 +497,7 @@
     "discord_enabled": "Discord のステータスに対局を表示",
     "discord_enabled_hint": "対局中、Discord のプロフィールにプラットフォーム・ルール・局・順位と点数・経過時間を表示します。Discord のアクティビティを閲覧できる全員に見えます。このコンピューターで Discord が起動している必要があります。",
     "discord_client_id": "Discord アプリケーション ID",
-    "discord_client_id_hint": "discord.com/developers でアプリケーションを作成し、その Application ID を貼り付けてください。「プレイ中: …」にはアプリケーション名が表示されます。",
+    "discord_client_id_hint": "discord.com/developers でアプリケーションを作成し、その Application ID を貼り付けてください。",
     "discord_client_id_invalid": "アプリケーション ID は数字のみです。"
   },
   "setup": {

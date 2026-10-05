@@ -56,7 +56,9 @@ impl Lang {
 /// `dahai` that changes nothing visible costs nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Presence {
-    /// "Mahjong Soul · 4P East-South"
+    /// "Mahjong Soul" — replaces the application's name in "Playing …".
+    pub name: String,
+    /// "4P East-South"
     pub details: String,
     /// "East 2 · 1 honba · 2nd · 28,400"
     pub state: String,
@@ -123,7 +125,7 @@ fn apply(game: &mut Option<Game>, event: &MjaiEvent, now_ms: i64) {
 
 impl Game {
     fn presence(&self, platform: Platform, lang: Lang) -> Presence {
-        let platform = match (platform, lang) {
+        let name = match (platform, lang) {
             (Platform::Majsoul, Lang::En) => "Mahjong Soul",
             (Platform::Majsoul, _) => "雀魂",
             (Platform::Tenhou, Lang::En) => "Tenhou",
@@ -148,7 +150,7 @@ impl Game {
             (Some(2 | 12), Lang::Ja) => "半荘",
             _ => "",
         };
-        let details = format!("{platform} · {players}{length}");
+        let details = format!("{players}{length}");
 
         let mut parts = Vec::new();
         if let Some(r) = &self.round {
@@ -187,6 +189,7 @@ impl Game {
         };
 
         Presence {
+            name: name.to_string(),
             details,
             state,
             start_ms: self.start_ms,
@@ -347,6 +350,7 @@ fn worker(config: Arc<RwLock<AppConfig>>, rx: mpsc::Receiver<Option<Presence>>) 
 fn show(client: &mut DiscordIpcClient, p: &Presence) -> Result<(), DiscordError> {
     client.set_activity(
         Activity::new()
+            .name(p.name.as_str())
             .details(p.details.as_str())
             .state(p.state.as_str())
             .timestamps(Timestamps::new().start(p.start_ms)),
@@ -423,7 +427,8 @@ mod tests {
     fn before_the_first_kyoku() {
         let events = [start_game(Some(0), 4, Some(2))];
         let p = presence(&events, Platform::Majsoul).unwrap();
-        assert_eq!(p.details, "Mahjong Soul · 4P East-South");
+        assert_eq!(p.name, "Mahjong Soul");
+        assert_eq!(p.details, "4P East-South");
         assert_eq!(p.state, "Starting");
         assert_eq!(p.start_ms, 1_000);
     }
@@ -445,7 +450,8 @@ mod tests {
             start_kyoku("E", 1, 0, vec![35_000, 35_000, 35_000]),
         ];
         let p = presence(&events, Platform::Tenhou).unwrap();
-        assert_eq!(p.details, "Tenhou · 3P");
+        assert_eq!(p.name, "Tenhou");
+        assert_eq!(p.details, "3P");
         assert_eq!(p.state, "East 1");
     }
 
@@ -456,11 +462,12 @@ mod tests {
             start_kyoku("S", 2, 1, vec![31_000, 28_400, 28_400, 12_200]),
         ];
         let p = presence_in(&events, Platform::Majsoul, Lang::ZhTw).unwrap();
-        assert_eq!(p.details, "雀魂 · 四人半莊");
+        assert_eq!(p.name, "雀魂");
+        assert_eq!(p.details, "四人半莊");
         assert_eq!(p.state, "南2局 · 1本場 · 2位 · 28,400");
 
         let p = presence_in(&events[..1], Platform::Tenhou, Lang::ZhCn).unwrap();
-        assert_eq!(p.details, "天凤 · 四人半庄");
+        assert_eq!(p.name, "天凤");
         assert_eq!(p.state, "开局中");
     }
 
