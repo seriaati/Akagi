@@ -131,6 +131,60 @@ pub async fn evaluate_canvas_rect(page: &Page) -> Result<CanvasRect> {
     Ok(rect)
 }
 
+/// Capture a region of the page (CSS pixels) and decode it to RGB pixels.
+///
+/// The raw `Page.captureScreenshot` command rather than `Page::screenshot`:
+/// the wrapper activates the tab first, which would pull the game to the
+/// front on every poll.
+pub async fn capture_rgb(
+    page: &Page,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<Vec<[u8; 3]>> {
+    use base64::Engine as _;
+    use chromiumoxide::cdp::browser_protocol::page::{
+        CaptureScreenshotFormat, CaptureScreenshotParams, Viewport,
+    };
+    let params = CaptureScreenshotParams::builder()
+        .format(CaptureScreenshotFormat::Png)
+        .clip(Viewport {
+            x,
+            y,
+            width,
+            height,
+            scale: 1.0,
+        })
+        .build();
+    let shot = page
+        .execute(params)
+        .await
+        .context("CDP captureScreenshot")?;
+    let data: &str = shot.result.data.as_ref();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .context("screenshot: base64")?;
+    let mut decoder = png::Decoder::new(bytes.as_slice());
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().context("screenshot: png header")?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut buf)
+        .context("screenshot: png frame")?;
+    let channels = info.color_type.samples();
+    if channels < 3 {
+        return Err(anyhow!(
+            "screenshot: unexpected colour type {:?}",
+            info.color_type
+        ));
+    }
+    Ok(buf[..info.buffer_size()]
+        .chunks_exact(channels)
+        .map(|p| [p[0], p[1], p[2]])
+        .collect())
+}
+
 // ============================================================================
 // Tenhou actuation
 // ============================================================================

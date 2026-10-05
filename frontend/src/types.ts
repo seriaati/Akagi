@@ -111,6 +111,12 @@ export type MajsoulAutoplayConfig = {
   /** Reload the game page after this many dead decisions in a row; 0 = off. */
   reload_after_failures: number
   dealer_first_discard_extra_delay_ms: number
+  /** After a match ends, click through the result screens and press
+   *  再來一場 to queue the same mode again. Mahjong Soul only. */
+  auto_rematch: boolean
+  /** Stop after this many back-to-back matches, counting the one the run
+   *  started from; 0 = no limit. */
+  auto_rematch_limit: number
 }
 
 /** Pre-click delay model parameters. Mirrors

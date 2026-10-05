@@ -43,6 +43,9 @@ const METHOD_SYNC_GAME: &str = ".lq.FastTest.syncGame";
 /// can tell a click that registered from one the UI swallowed.
 const METHOD_INPUT_OPERATION: &str = ".lq.FastTest.inputOperation";
 const METHOD_INPUT_CHI_PENG_GANG: &str = ".lq.FastTest.inputChiPengGang";
+/// The lobby call that joins a matchmaking queue — what pressing 再來一場
+/// sends. Watched so auto-rematch can tell its press landed.
+const METHOD_START_UNIFIED_MATCH: &str = ".lq.Lobby.startUnifiedMatch";
 /// `timeuse` the client stamps on an action it took by itself rather than
 /// on one the player made — a decision window that ran out, or an auto
 /// setting. Observed as exactly this value on both input methods.
@@ -290,6 +293,12 @@ impl MajsoulBridge {
                     if is_client_initiated(&msg.payload) {
                         watch.note_sent(input_kind(msg.method_name.as_ref(), &msg.payload));
                     }
+                }
+                Vec::new()
+            }
+            (MessageType::Request, METHOD_START_UNIFIED_MATCH) => {
+                if let Some(watch) = &self.input_watch {
+                    watch.note_match_request();
                 }
                 Vec::new()
             }
@@ -4202,6 +4211,22 @@ mod tests {
             payload: json!({ "reason": "client left game" }),
         });
         assert_eq!(events, vec![MjaiEvent::terminated_game()]);
+    }
+
+    /// Joining a queue (what 再來一場 sends) is counted for auto-rematch and
+    /// emits nothing.
+    #[test]
+    fn start_unified_match_is_counted() {
+        let watch = Arc::new(crate::autoplay::InputWatch::default());
+        let mut bridge = MajsoulBridge::new(None, None).with_input_watch(Some(watch.clone()));
+        let events = bridge.dispatch(&ParsedMessage {
+            msg_type: MessageType::Request,
+            msg_id: Some(1),
+            method_name: Arc::from(METHOD_START_UNIFIED_MATCH),
+            payload: json!({ "match_sid": "1:6" }),
+        });
+        assert!(events.is_empty());
+        assert_eq!(watch.match_requests(), 1);
     }
 
     /// State must reset on a new kyoku — stray `deferred_doras` from the

@@ -42,6 +42,7 @@ dependencies = [
  "native_bot",
  "opener",
  "percent-encoding",
+ "png",
  "prost",
  "prost-build",
  "prost-reflect",

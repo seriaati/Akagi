@@ -60,6 +60,9 @@ pub struct InputWatch {
     sent: AtomicU64,
     reach: AtomicU64,
     non_discard: AtomicU64,
+    /// Lobby `startUnifiedMatch` requests — the client joining a queue, which
+    /// is how a 再來一場 press shows up (see `majsoul::rematch`).
+    match_requests: AtomicU64,
 }
 
 /// A snapshot of the counts, taken before a click.
@@ -102,6 +105,17 @@ impl InputWatch {
     /// client's own turn-timeout tsumogiri.
     pub fn non_discard_since(&self, ticket: InputTicket) -> bool {
         self.non_discard.load(Ordering::Relaxed) != ticket.non_discard
+    }
+
+    /// The bridge saw the client join a matchmaking queue.
+    pub fn note_match_request(&self) {
+        self.match_requests.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// How many queue joins the client has sent; compare two reads to ask
+    /// whether one happened in between.
+    pub fn match_requests(&self) -> u64 {
+        self.match_requests.load(Ordering::Relaxed)
     }
 
     /// Whether a *riichi* input has been sent since `ticket` was taken.

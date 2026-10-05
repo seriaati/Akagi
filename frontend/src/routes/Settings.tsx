@@ -877,6 +877,8 @@ function AutoplayCard({
       click_retries: 2,
       reload_after_failures: 3,
       dealer_first_discard_extra_delay_ms: 2000,
+      auto_rematch: false,
+      auto_rematch_limit: 0,
     },
     delay: defaultDelayModel(),
   }
@@ -886,6 +888,7 @@ function AutoplayCard({
   // Riichi City autoplay runs through the MITM proxy (frame injection), so
   // the Chromium-mode requirement only applies to the click platforms.
   const platformIsRiichiCity = draft.platform?.kind === 'RiichiCity'
+  const platformIsMajsoul = (draft.platform?.kind ?? 'Majsoul') === 'Majsoul'
   const setApField = (patch: Partial<typeof ap>) =>
     setDraft({ ...draft, autoplay: { ...ap, ...patch } })
   const setMajsoulField = (patch: Partial<typeof ap.majsoul>) =>
@@ -919,6 +922,37 @@ function AutoplayCard({
           <p className="text-xs text-amber-500">
             {t('settings.autoplay.requires_chromium')}
           </p>
+        )}
+        {platformIsMajsoul && (
+          <>
+            <Toggle
+              label={t('settings.autoplay.auto_rematch')}
+              value={ap.majsoul.auto_rematch ?? false}
+              onChange={(v) => setMajsoulField({ auto_rematch: v })}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t('settings.autoplay.auto_rematch_help')}
+            </p>
+            {ap.majsoul.auto_rematch && (
+              <Field
+                label={t('settings.autoplay.auto_rematch_limit')}
+                hint={t('settings.autoplay.auto_rematch_limit_hint')}
+              >
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={ap.majsoul.auto_rematch_limit ?? 0}
+                  onChange={(e) =>
+                    // Clamp: a typed negative would fail u32 deserialization.
+                    setMajsoulField({
+                      auto_rematch_limit: Math.max(0, Number(e.target.value || 0)),
+                    })
+                  }
+                />
+              </Field>
+            )}
+          </>
         )}
         {/* Delay policy: exactly one of legacy (fixed uniform) or the
             Lua-scripted human-like model is active. */}

@@ -212,6 +212,13 @@ pub struct MajsoulAutoplayConfig {
     /// opt out (e.g. on a fast box where the animation finishes inside
     /// the regular pre-click delay anyway).
     pub dealer_first_discard_extra_delay_ms: u32,
+    /// After a match ends normally, click through the result screens and
+    /// press 再來一場 to queue the same mode again. See
+    /// `autoplay::majsoul::rematch`.
+    pub auto_rematch: bool,
+    /// Stop rematching once this many matches have been played back to
+    /// back, counting the one the run started from. `0` = no limit.
+    pub auto_rematch_limit: u32,
 }
 
 impl Default for MajsoulAutoplayConfig {
@@ -226,6 +233,8 @@ impl Default for MajsoulAutoplayConfig {
             click_retries: 2,
             reload_after_failures: 3,
             dealer_first_discard_extra_delay_ms: 2000,
+            auto_rematch: false,
+            auto_rematch_limit: 0,
         }
     }
 }

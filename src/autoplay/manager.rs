@@ -127,6 +127,11 @@ impl AutoplayManager {
             )
             .await;
         });
+        tauri::async_runtime::spawn(crate::autoplay::majsoul::rematch::rematch_watcher(
+            self.cfg.clone(),
+            self.ctx.clone(),
+            self.mjai_bus.clone(),
+        ));
 
         loop {
             tokio::select! {

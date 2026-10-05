@@ -56,6 +56,8 @@ function makeConfig(over: {
         click_retries: 0,
         reload_after_failures: 0,
         dealer_first_discard_extra_delay_ms: 0,
+        auto_rematch: false,
+        auto_rematch_limit: 0,
       },
       delay: {
         mode: 'legacy',
