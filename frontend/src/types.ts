@@ -54,7 +54,7 @@ export type BotStatus =
   | { state: 'error'; bot: string; error: string }
   | { state: 'stopped'; bot: string }
 
-export type CaptureKind = 'mitm' | 'chromium'
+export type CaptureKind = 'mitm' | 'chromium' | 'hybrid'
 
 export type CaptureStatus =
   | { state: 'stopped' }
@@ -70,7 +70,7 @@ export type Notification = {
   id?: string
 }
 
-export type CaptureMode = 'mitm' | 'chromium'
+export type CaptureMode = 'mitm' | 'chromium' | 'hybrid'
 
 export type ChromiumConfig = {
   executable: string

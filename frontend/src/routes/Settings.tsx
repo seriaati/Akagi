@@ -904,7 +904,8 @@ function AutoplayCard({
     delay: defaultDelayModel(),
   }
   const delay = ap.delay ?? defaultDelayModel()
-  const captureIsChromium = draft.capture?.mode === 'chromium'
+  // Hybrid also drives a CDP-controlled browser, so click autoplay works there.
+  const captureIsChromium = draft.capture?.mode === 'chromium' || draft.capture?.mode === 'hybrid'
   // Riichi City autoplay runs through the MITM proxy (frame injection), so
   // the Chromium-mode requirement only applies to the click platforms.
   const platformIsRiichiCity = draft.platform?.kind === 'RiichiCity'
@@ -1206,7 +1207,7 @@ function CaptureCard({
   }
 
   useEffect(() => {
-    if (mode === 'chromium' && detected === null) {
+    if (mode !== 'mitm' && detected === null) {
       // probe() sets detecting/detected state; intentional on mode switch.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       probe()
@@ -1249,6 +1250,9 @@ function CaptureCard({
               <SelectItem value="chromium" disabled={!supportsChromium}>
                 {t('settings.capture_chromium_option')}
               </SelectItem>
+              <SelectItem value="hybrid" disabled={!supportsChromium}>
+                {t('settings.capture_hybrid_option')}
+              </SelectItem>
             </SelectContent>
           </Select>
         </Field>
@@ -1257,7 +1261,7 @@ function CaptureCard({
           <p className="text-xs text-amber-500">{t('settings.capture_mitm_only')}</p>
         )}
 
-        {mode === 'mitm' && (
+        {mode !== 'chromium' && (
           <>
             <Toggle
               label={t('settings.proxy_enabled')}
@@ -1300,7 +1304,7 @@ function CaptureCard({
           </>
         )}
 
-        {mode === 'chromium' && (
+        {mode !== 'mitm' && (
           <>
             <Field label={t('settings.browser_executable')} hint={t('settings.browser_executable_hint')}>
               <Input

@@ -30,7 +30,13 @@ export function Overview() {
   const logDir = useConfigStore((s) => s.logDir)
   const lastAnalysis = useAnalysisStore((s) => s.updatedAt)
 
-  const captureTitle = 'kind' in capture && capture.kind === 'chromium' ? t('overview.capture_chromium') : t('overview.capture_mitm')
+  const captureKind = 'kind' in capture ? capture.kind : 'mitm'
+  const captureTitle =
+    captureKind === 'chromium'
+      ? t('overview.capture_chromium')
+      : captureKind === 'hybrid'
+        ? t('overview.capture_hybrid')
+        : t('overview.capture_mitm')
   const captureDetail = 'descriptor' in capture && capture.descriptor ? capture.descriptor : '—'
 
   return (
