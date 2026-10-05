@@ -176,6 +176,17 @@ impl IpAwareAuthority {
         }
     }
 
+    /// Base64 SHA-256 of the CA's SubjectPublicKeyInfo — the form Chromium's
+    /// `--ignore-certificate-errors-spki-list` takes. Leaves are minted with
+    /// the CA key itself (see `gen_cert`), so they carry the same SPKI.
+    pub fn spki_pin(&self) -> String {
+        use base64::Engine;
+        use hudsucker::rcgen::PublicKeyData;
+        use sha2::Digest;
+        let spki = self.issuer.key().subject_public_key_info();
+        base64::engine::general_purpose::STANDARD.encode(sha2::Sha256::digest(spki))
+    }
+
     fn gen_cert(&self, host: &str) -> CertificateDer<'static> {
         leaf_params(host)
             .signed_by(self.issuer.key(), &self.issuer)
@@ -240,6 +251,21 @@ mod tests {
             p.subject_alt_names.as_slice(),
             [SanType::IpAddress(_)]
         ));
+    }
+
+    /// Hybrid mode trusts the proxy in Chromium by SPKI pin, which only works
+    /// because every served leaf carries the CA's own public key.
+    #[test]
+    fn spki_pin_matches_served_leaf() {
+        use base64::Engine;
+        use sha2::Digest;
+        let dir = tempfile::tempdir().unwrap();
+        let ca = load_or_generate(dir.path()).unwrap();
+        let leaf = ca.gen_cert("game.maj-soul.com");
+        let (_, cert) = x509_parser::parse_x509_certificate(&leaf).unwrap();
+        let leaf_pin = base64::engine::general_purpose::STANDARD
+            .encode(sha2::Sha256::digest(cert.public_key().raw));
+        assert_eq!(ca.spki_pin(), leaf_pin);
     }
 
     #[test]

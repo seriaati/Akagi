@@ -18,6 +18,13 @@ use std::{future::Future, net::SocketAddr, str::FromStr, sync::Arc};
 use tokio::sync::Notify;
 use tracing::info;
 
+/// Chromium's `--ignore-certificate-errors-spki-list` value for the CA in
+/// `ca_dir` (generated if missing): base64 SHA-256 of its SubjectPublicKeyInfo.
+/// Every leaf the proxy mints reuses the CA key, so this pin matches them all.
+pub fn ca_spki_pin(ca_dir: &std::path::Path) -> Result<String> {
+    Ok(ca::load_or_generate(&resolve_dir(ca_dir))?.spki_pin())
+}
+
 /// Build and run the MITM proxy until `shutdown` resolves.
 ///
 /// The argument list is long because this is the composition root for the
