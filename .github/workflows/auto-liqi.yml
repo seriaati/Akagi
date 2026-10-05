@@ -59,9 +59,14 @@ jobs:
             Review the diff before merging — `liqi.proto` fuels `build.rs`
             (prost-build) and the runtime descriptor pool, and `liqi.json` is the
             flat rpc-map used by `src/bridge/majsoul/parser.rs`.
+
+            `src/proxy/rewrite/majsoul_unlock/catalog.json` is the cosmetic
+            catalog (characters, skins, titles, …) read from the client's
+            `Excels/Data/item_definition` and `spot/rewards` sheets.
           labels: |
             automation
             majsoul
           add-paths: |
             src/bridge/majsoul/liqi.json
             src/bridge/majsoul/proto/liqi.proto
+            src/proxy/rewrite/majsoul_unlock/catalog.json

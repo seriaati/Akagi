@@ -64,6 +64,9 @@ table in `docs/proto_config.bytes` — and writes:
 
 - `src/bridge/majsoul/proto/liqi.proto` — flat proto3 schema (`package lq`),
 - `src/bridge/majsoul/liqi.json` — flat rpc-map `".lq.Svc.method" → {req, resp}`.
+- `src/proxy/rewrite/majsoul_unlock/catalog.json` — every character (with its
+  initial skin), skin, title, view item, loading image and ending, read from the
+  `Excels/Data` Lua sheets. Used by the cosmetic unlock rewriter.
 
 It exposes `product_version`, `bundle_hash`, and `changed=true/false` as GHA
 outputs; the workflow opens a PR on `v3` when the schema moved. Requires

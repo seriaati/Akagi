@@ -59,6 +59,7 @@ except ModuleNotFoundError:  # pragma: no cover
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTO_OUT = REPO_ROOT / "src" / "bridge" / "majsoul" / "proto" / "liqi.proto"
 JSON_OUT = REPO_ROOT / "src" / "bridge" / "majsoul" / "liqi.json"
+CATALOG_OUT = REPO_ROOT / "src" / "proxy" / "rewrite" / "majsoul_unlock" / "catalog.json"
 
 CLIENT_URL = "https://game.maj-soul.com/1/"
 TEXTURE_PROFILES = ("ASTC", "DXT")
@@ -71,6 +72,7 @@ USER_AGENT = (
 
 PROTOL_PREFIX = "LuaByte/Lua/Protol/"
 PROTO_CONFIG_ASSET = "MyAssets/docs/proto_config.bytes"
+EXCEL_PREFIX = "LuaByte/Lua/Excels/Data/"
 
 # Wire-protocol package. `lq.config` and `lqc` (excel) are game-data, excluded.
 WIRE_PACKAGE = "lq"
@@ -482,6 +484,170 @@ def build_outputs(
 
 
 # --------------------------------------------------------------------------- #
+# Cosmetic catalog from the Excel sheets (pure)
+# --------------------------------------------------------------------------- #
+# A sheet is a base module (`<sheet>.lua`) holding the schema — `local d={["id"]=1,
+# ...}` field positions and `local e={...}` defaults — plus zero or more block
+# modules (`<sheet>_b<N>.lua`) holding rows as `g[<id>]=b({<values>},h)`. Small
+# sheets keep their rows in the base module. Inside a row, `e[<s><eee>]` marks
+# positions s..eee as "use the default", and `false` does the same for one slot.
+def _split_top_level(body: str) -> list[str]:
+    """Split the inside of a Lua table literal on its top-level commas."""
+    out: list[str] = []
+    depth, quote, start, i = 0, None, 0, 0
+    while i < len(body):
+        ch = body[i]
+        if quote:
+            if ch == "\\":
+                i += 1
+            elif ch == quote:
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+        elif ch in "({[":
+            depth += 1
+        elif ch in ")}]":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            out.append(body[start:i].strip())
+            start = i + 1
+        i += 1
+    tail = body[start:].strip()
+    if tail:
+        out.append(tail)
+    return out
+
+
+def _balanced_body(source: str, open_at: int) -> str:
+    """Return the text between the `{` at `open_at` and its matching `}`."""
+    depth, quote, i = 0, None, open_at
+    while i < len(source):
+        ch = source[i]
+        if quote:
+            if ch == "\\":
+                i += 1
+            elif ch == quote:
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return source[open_at + 1 : i]
+        i += 1
+    raise ValueError(f"unbalanced table at offset {open_at}")
+
+
+def _excel_schema(base_source: str) -> tuple[dict[str, int], list[str]]:
+    """(field name -> 1-based position, raw default per position) of a sheet."""
+    m = re.search(r"return\s+\w+\(\w+,\w+,(\w+),(\w+)(?:,\"[^\"]*\")?\)", base_source)
+    if not m:
+        raise ValueError("excel schema accessor not found")
+    tables = {}
+    for name in m.groups():
+        decl = re.search(rf"local\s+{name}\s*=\s*\{{", base_source)
+        if not decl:
+            raise ValueError(f"excel schema table {name} not found")
+        tables[name] = _balanced_body(base_source, decl.end() - 1)
+    fields = {}
+    for entry in _split_top_level(tables[m.group(1)]):
+        fm = re.fullmatch(r'\["(\w+)"\]=(-?\d+)', entry)
+        if fm:
+            raw = abs(int(fm.group(2)))
+            fields[fm.group(1)] = raw % 1000 if raw >= 1000 else raw
+    return fields, _split_top_level(tables[m.group(2)])
+
+
+_EXCEL_ROW = re.compile(r"\b[A-Za-z_]\w*\[\d+\]\s*=\s*[A-Za-z_]\w*\(\{")
+_DMAP = re.compile(r"[A-Za-z_]\w*\[(\d+)\]")
+
+
+def parse_excel_sheet(base_source: str, block_sources: list[str]) -> list[dict[str, str | None]]:
+    """Rows of one sheet as {field: raw Lua literal}, defaults filled in."""
+    fields, defaults = _excel_schema(base_source)
+    rows = []
+    for source in (base_source, *block_sources):
+        for m in _EXCEL_ROW.finditer(source):
+            values: dict[int, str | None] = {}
+            skipped: set[int] = set()
+            pos = 1
+            for value in _split_top_level(_balanced_body(source, m.end() - 1)):
+                dm = _DMAP.fullmatch(value)
+                if dm:
+                    n = int(dm.group(1))
+                    skipped.update(range(n // 1000, n % 1000 + 1))
+                    continue
+                while pos in skipped:
+                    pos += 1
+                if value != "false":
+                    values[pos] = value
+                pos += 1
+            row = {}
+            for name, p in fields.items():
+                raw = values.get(p, defaults[p - 1] if p <= len(defaults) else None)
+                row[name] = None if raw in (None, "nil") else raw
+            rows.append(row)
+    return rows
+
+
+# (catalog key, sheet module under Excels/Data/). Everything a fully unlocked
+# account owns; see `src/proxy/rewrite/majsoul_unlock/`.
+CATALOG_SHEETS = (
+    "item_definition/character",
+    "item_definition/skin",
+    "item_definition/title",
+    "item_definition/item",
+    "item_definition/loading_image",
+    "spot/rewards",
+)
+# `item.json` categories: 5 = cosmetics (view items), 8 = loading images.
+ITEM_CATEGORY_VIEW = 5
+ITEM_CATEGORY_LOADING_IMAGE = 8
+
+
+def build_catalog(excel_sources: dict[str, str]) -> dict:
+    """Excel sheet sources ({"item_definition/skin_b1": lua, ...}) -> catalog."""
+    sheets = {}
+    for sheet in CATALOG_SHEETS:
+        if sheet not in excel_sources:
+            raise SystemExit(f"excel sheet missing from extraction: {sheet}")
+        blocks = sorted(
+            (k for k in excel_sources if re.fullmatch(re.escape(sheet) + r"_b\d+", k)),
+            key=lambda k: int(k.rsplit("_b", 1)[1]),
+        )
+        sheets[sheet] = parse_excel_sheet(
+            excel_sources[sheet], [excel_sources[k] for k in blocks]
+        )
+
+    def ids(rows, pred=lambda r: True) -> list[int]:
+        return sorted({int(r["id"]) for r in rows if r["id"] and pred(r)})
+
+    items = sheets["item_definition/item"]
+    category = lambda c: lambda r: r["category"] == str(c)  # noqa: E731
+    catalog = {
+        "characters": sorted(
+            ({"id": int(r["id"]), "init_skin": int(r["init_skin"])}
+             for r in sheets["item_definition/character"] if r["id"] and r["init_skin"]),
+            key=lambda c: c["id"],
+        ),
+        "skins": ids(sheets["item_definition/skin"]),
+        "titles": ids(sheets["item_definition/title"]),
+        "items": ids(items, category(ITEM_CATEGORY_VIEW)),
+        "loading_images": sorted(
+            set(ids(items, category(ITEM_CATEGORY_LOADING_IMAGE)))
+            | set(ids(sheets["item_definition/loading_image"]))
+        ),
+        "endings": ids(sheets["spot/rewards"]),
+    }
+    for key, value in catalog.items():
+        if not value:
+            raise SystemExit(f"catalog list is empty after extraction: {key}")
+    return catalog
+
+
+# --------------------------------------------------------------------------- #
 # Unity bundle download (IO)
 # --------------------------------------------------------------------------- #
 def _session() -> requests.Session:
@@ -515,10 +681,24 @@ def _choose_url(entries: list[dict]) -> str:
     return ordered[0]["url"]
 
 
-def fetch_from_unity(timeout: int = 60) -> tuple[dict[str, str], dict, dict[str, str]]:
-    """Download and decode the Protol Lua sources + proto_config.bytes.
+def _catalog_sheet_of(asset_path: str) -> str | None:
+    """`LuaByte/Lua/Excels/Data/item_definition/skin_b3.lua.bytes` -> its
+    module key (`item_definition/skin_b3`) if it belongs to a catalog sheet."""
+    if not (asset_path.startswith(EXCEL_PREFIX) and asset_path.endswith(".lua.bytes")):
+        return None
+    key = asset_path[len(EXCEL_PREFIX) : -len(".lua.bytes")]
+    base = re.sub(r"_b\d+$", "", key)
+    return key if base in CATALOG_SHEETS else None
 
-    Returns (lua_sources{module_name: text}, proto_config_json, meta).
+
+def fetch_from_unity(
+    timeout: int = 60,
+) -> tuple[dict[str, str], dict, dict[str, str], dict[str, str]]:
+    """Download and decode the Protol Lua sources, proto_config.bytes and the
+    catalog Excel sheets.
+
+    Returns (lua_sources{module_name: text}, proto_config_json,
+    excel_sources{sheet_key: text}, meta).
     """
     import UnityPy  # imported lazily so the pure logic is testable without it
 
@@ -569,10 +749,11 @@ def fetch_from_unity(timeout: int = 60) -> tuple[dict[str, str], dict, dict[str,
             continue
         if path.startswith(PROTOL_PREFIX) and path.endswith(".lua.bytes"):
             wanted.setdefault(int(idx), []).append(path)
-        elif path == PROTO_CONFIG_ASSET:
+        elif path == PROTO_CONFIG_ASSET or _catalog_sheet_of(path):
             wanted.setdefault(int(idx), []).append(path)
 
     lua_sources: dict[str, str] = {}
+    excel_sources: dict[str, str] = {}
     proto_config: dict | None = None
     for idx, paths in sorted(wanted.items()):
         name = bundle_infos[idx]["name"]
@@ -584,6 +765,8 @@ def fetch_from_unity(timeout: int = 60) -> tuple[dict[str, str], dict, dict[str,
                 continue
             if path == PROTO_CONFIG_ASSET:
                 proto_config = json.loads(data.decode("utf-8", "replace"))
+            elif sheet := _catalog_sheet_of(path):
+                excel_sources[sheet] = _decode_lua(data).decode("utf-8", "surrogateescape")
             else:
                 module_name = posixpath.basename(path)[: -len(".lua.bytes")]
                 lua_sources[module_name] = _decode_lua(data).decode("utf-8", "surrogateescape")
@@ -594,7 +777,7 @@ def fetch_from_unity(timeout: int = 60) -> tuple[dict[str, str], dict, dict[str,
         raise SystemExit("no Protol descriptor Lua found in the Unity bundles")
 
     meta = {"product_version": product_version, "bundle_hash": bundle_hash, "issuer": issuer}
-    return lua_sources, proto_config, meta
+    return lua_sources, proto_config, excel_sources, meta
 
 
 def _read_bundle_info(unitypy, data: bytes) -> tuple[list[dict], list[dict]]:
@@ -660,10 +843,13 @@ def _emit_output(name: str, value: str) -> None:
         fh.write(f"{name}={value}\n")
 
 
-def write_outputs(proto_text: str, rpc_map: dict, meta: dict) -> bool:
+def write_outputs(proto_text: str, rpc_map: dict, catalog: dict, meta: dict) -> bool:
     json_text = json.dumps(rpc_map, ensure_ascii=False, separators=(",", ":")) + "\n"
+    catalog_text = json.dumps(catalog, separators=(",", ":")) + "\n"
     changed = False
-    for path, text in ((PROTO_OUT, proto_text), (JSON_OUT, json_text)):
+    for path, text in (
+        (PROTO_OUT, proto_text), (JSON_OUT, json_text), (CATALOG_OUT, catalog_text)
+    ):
         new = text.encode("utf-8")
         old = path.read_bytes() if path.exists() else b""
         if hashlib.sha256(new).hexdigest() != hashlib.sha256(old).hexdigest():
@@ -690,20 +876,22 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     if args.from_raw:
-        lua_sources, proto_config, meta = _load_from_raw(Path(args.from_raw))
+        lua_sources, proto_config, excel_sources, meta = _load_from_raw(Path(args.from_raw))
     else:
-        lua_sources, proto_config, meta = fetch_from_unity(args.timeout)
+        lua_sources, proto_config, excel_sources, meta = fetch_from_unity(args.timeout)
 
     print(f"[extract] {len(lua_sources)} Protol modules, "
           f"{len(proto_config.get('service', {}))} services")
     proto_text, rpc_map = build_outputs(lua_sources, proto_config)
     print(f"[extract] rendered {len(proto_text.splitlines())} proto lines, "
           f"{len(rpc_map)} rpc routes")
-    write_outputs(proto_text, rpc_map, meta)
+    catalog = build_catalog(excel_sources)
+    print("[extract] catalog: " + ", ".join(f"{len(v)} {k}" for k, v in catalog.items()))
+    write_outputs(proto_text, rpc_map, catalog, meta)
     return 0
 
 
-def _load_from_raw(root: Path) -> tuple[dict[str, str], dict, dict]:
+def _load_from_raw(root: Path) -> tuple[dict[str, str], dict, dict[str, str], dict]:
     protol = root / "lua" / "LuaByte" / "Lua" / "Protol"
     if not protol.exists():
         protol = root  # allow pointing directly at a Protol dir
@@ -715,7 +903,14 @@ def _load_from_raw(root: Path) -> tuple[dict[str, str], dict, dict]:
     if not cfg.exists():
         cfg = root / "proto_config.bytes"
     proto_config = json.loads(cfg.read_text(encoding="utf-8", errors="replace"))
-    return lua_sources, proto_config, {"product_version": "offline", "bundle_hash": ""}
+    excels = root / "lua" / "LuaByte" / "Lua" / "Excels" / "Data"
+    excel_sources = {
+        key: p.read_text(encoding="utf-8", errors="surrogateescape")
+        for p in sorted(excels.rglob("*.lua"))
+        if (key := _catalog_sheet_of(EXCEL_PREFIX + p.relative_to(excels).as_posix() + ".bytes"))
+    }
+    meta = {"product_version": "offline", "bundle_hash": ""}
+    return lua_sources, proto_config, excel_sources, meta
 
 
 if __name__ == "__main__":
