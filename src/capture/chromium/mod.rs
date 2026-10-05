@@ -27,11 +27,20 @@ use tracing::{info, warn};
 
 pub struct ChromiumBackend {
     cfg: ChromiumConfig,
+    /// Hybrid mode: browse through the MITM proxy, which then owns frame and
+    /// HTTP capture; this backend only binds the page handle for autoplay.
+    proxy: Option<launch::ChromiumProxy>,
 }
 
 impl ChromiumBackend {
     pub fn new(cfg: ChromiumConfig) -> Self {
-        Self { cfg }
+        Self { cfg, proxy: None }
+    }
+
+    /// See [`Self::proxy`].
+    pub fn via_proxy(mut self, proxy: launch::ChromiumProxy) -> Self {
+        self.proxy = Some(proxy);
+        self
     }
 
     /// Resolve the chrome executable. Resolution order:
@@ -105,8 +114,8 @@ impl CaptureBackend for ChromiumBackend {
             profile_dir.display()
         );
 
-        let launched =
-            launch::spawn(&exe, &profile_dir, &self.cfg).context("launching chromium")?;
+        let launched = launch::spawn(&exe, &profile_dir, &self.cfg, self.proxy.as_ref())
+            .context("launching chromium")?;
         let mut child = launched.child;
 
         let cdp_endpoint =
@@ -129,15 +138,19 @@ impl CaptureBackend for ChromiumBackend {
             })
             .unwrap_or_default();
         hooks.notify = Some(ctx.notify_bus.clone());
-        let bridges = Arc::new(FlowBridges::<cdp::FlowKey>::new(
-            ctx.session.clone(),
-            ctx.platform,
-            hooks,
-        ));
+        // Behind the proxy, the proxy's bridges see every frame (before any
+        // rewrite); parsing them here too would emit each event twice.
+        let bridges = self.proxy.is_none().then(|| {
+            Arc::new(FlowBridges::<cdp::FlowKey>::new(
+                ctx.session.clone(),
+                ctx.platform,
+                hooks,
+            ))
+        });
 
         let cdp_run = cdp::run(
             &cdp_endpoint,
-            bridges.clone(),
+            bridges,
             ctx.mjai_bus.clone(),
             ctx.session.inspector(),
             ctx.autoplay.clone(),

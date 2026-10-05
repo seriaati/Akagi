@@ -146,9 +146,13 @@ fn is_autoplay_target_url(ws_url: &str) -> bool {
 /// feature is wired (`AppState.autoplay_context`). On Majsoul WS open
 /// we publish the page handle into it; autoplay reads it back to dispatch
 /// `Input.dispatchMouseEvent`. Passing `None` makes the loop bridge-only.
+///
+/// `bridges` is `None` in hybrid mode, where the MITM proxy in front of the
+/// browser captures frames and HTTP: the loop then only binds the page handle
+/// for autoplay (and keeps the Tenhou script rewrite).
 pub async fn run(
     endpoint: &str,
-    bridges: Arc<FlowBridges<FlowKey>>,
+    bridges: Option<Arc<FlowBridges<FlowKey>>>,
     mjai_bus: MjaiBus,
     inspector: InspectorWriter,
     autoplay: Option<Arc<AutoplayContext>>,
@@ -454,7 +458,7 @@ async fn rewrite_paused_script(
 async fn attach_page(
     page: Page,
     target_id: String,
-    bridges: Arc<FlowBridges<FlowKey>>,
+    bridges: Option<Arc<FlowBridges<FlowKey>>>,
     mjai_bus: MjaiBus,
     inspector: InspectorWriter,
     autoplay: Option<Arc<AutoplayContext>>,
@@ -517,13 +521,15 @@ async fn attach_page(
                     rewrite_paused_script(&page, &notify, ev.request_id.clone(), &url).await;
                 }
                 Some(ev) = on_created.next() => {
-                    let key = FlowKey {
-                        target: target_id.clone(),
-                        request: ev.request_id.inner().clone(),
-                    };
-                    let label = format!("ws {}", ev.url);
-                    let slug = slugify(&ev.url);
-                    let _ = bridges.acquire(key, &slug, &label);
+                    if let Some(bridges) = &bridges {
+                        let key = FlowKey {
+                            target: target_id.clone(),
+                            request: ev.request_id.inner().clone(),
+                        };
+                        let label = format!("ws {}", ev.url);
+                        let slug = slugify(&ev.url);
+                        let _ = bridges.acquire(key, &slug, &label);
+                    }
                     debug!("ws created: {} (target {target_id} request {})", ev.url, ev.request_id.inner());
 
                     // If this is the platform's WS (Majsoul), capture
@@ -569,6 +575,7 @@ async fn attach_page(
                     }
                 }
                 Some(ev) = on_recv.next() => {
+                    let Some(bridges) = &bridges else { continue };
                     let opcode = ev.response.opcode as i64;
                     let payload = match decode_frame_payload(opcode, &ev.response.payload_data) {
                         FrameDecode::Bytes(b) => b,
@@ -602,6 +609,7 @@ async fn attach_page(
                     }
                 }
                 Some(ev) = on_sent.next() => {
+                    let Some(bridges) = &bridges else { continue };
                     let opcode = ev.response.opcode as i64;
                     let payload = match decode_frame_payload(opcode, &ev.response.payload_data) {
                         FrameDecode::Bytes(b) => b,
@@ -635,6 +643,7 @@ async fn attach_page(
                     }
                 }
                 Some(ev) = on_closed.next() => {
+                    let Some(bridges) = &bridges else { continue };
                     let key = FlowKey {
                         target: target_id.clone(),
                         request: ev.request_id.inner().clone(),
@@ -655,6 +664,10 @@ async fn attach_page(
                     // cleared by the poll loop when the tab itself closes.
                 }
                 Some(ev) = on_request.next() => {
+                    // Behind the proxy, the proxy records HTTP.
+                    if bridges.is_none() {
+                        continue;
+                    }
                     // Fires for every subresource the page loads — the
                     // asymmetry with the MITM leg, where a whole session
                     // is a couple of dozen requests. Filter first, and
@@ -697,7 +710,7 @@ async fn attach_page(
                     });
                 }
                 Some(ev) = on_response.next() => {
-                    if !http_cfg.record_all {
+                    if bridges.is_none() || !http_cfg.record_all {
                         continue;
                     }
                     if is_static_asset(Some(&ev.r#type)) && !http_cfg.static_assets {

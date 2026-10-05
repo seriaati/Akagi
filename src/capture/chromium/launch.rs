@@ -26,6 +26,27 @@ const HTTP_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(1);
 const TERM_GRACE: Duration = Duration::from_secs(5);
 const KILL_GRACE: Duration = Duration::from_secs(2);
 
+/// Hybrid mode: route the browser through Akagi's MITM proxy and accept the
+/// certificates it mints, without touching the system proxy or trust store.
+#[derive(Debug, Clone)]
+pub struct ChromiumProxy {
+    /// `host:port` of the proxy listener.
+    pub server: String,
+    /// Base64 SHA-256 SPKI of the proxy CA (see `proxy::ca_spki_pin`).
+    /// Chromium honours the pin only alongside `--user-data-dir`, which
+    /// `spawn` always passes.
+    pub spki_pin: String,
+}
+
+impl ChromiumProxy {
+    fn args(&self) -> [String; 2] {
+        [
+            format!("--proxy-server=http://{}", self.server),
+            format!("--ignore-certificate-errors-spki-list={}", self.spki_pin),
+        ]
+    }
+}
+
 pub struct SpawnedChromium {
     pub child: Child,
     pub remote_debugging_port: Option<u16>,
@@ -37,7 +58,12 @@ struct RemoteDebuggingConfig {
     port: Option<u16>,
 }
 
-pub fn spawn(exe: &Path, profile: &Path, cfg: &ChromiumConfig) -> Result<SpawnedChromium> {
+pub fn spawn(
+    exe: &Path,
+    profile: &Path,
+    cfg: &ChromiumConfig,
+    proxy: Option<&ChromiumProxy>,
+) -> Result<SpawnedChromium> {
     let remote_debugging = remote_debugging_config(&cfg.extra_args)?;
     let mut cmd = Command::new(exe);
     cmd.arg(format!("--user-data-dir={}", profile.display()));
@@ -56,6 +82,9 @@ pub fn spawn(exe: &Path, profile: &Path, cfg: &ChromiumConfig) -> Result<Spawned
     if cfg!(target_os = "linux") {
         // Chromium occasionally crashes on Linux when /dev/shm is small (e.g. Docker).
         cmd.arg("--disable-dev-shm-usage");
+    }
+    if let Some(proxy) = proxy {
+        cmd.args(proxy.args());
     }
     for extra in &cfg.extra_args {
         cmd.arg(extra);
@@ -370,6 +399,21 @@ pub async fn terminate(child: &mut Child) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn proxy_args_route_through_proxy_and_pin_its_ca() {
+        let proxy = ChromiumProxy {
+            server: "127.0.0.1:23410".into(),
+            spki_pin: "abc=".into(),
+        };
+        assert_eq!(
+            proxy.args(),
+            [
+                "--proxy-server=http://127.0.0.1:23410".to_string(),
+                "--ignore-certificate-errors-spki-list=abc=".to_string(),
+            ]
+        );
+    }
 
     #[test]
     fn clear_session_state_removes_known_files_and_dirs() {
