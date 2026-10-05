@@ -153,7 +153,9 @@ export function useTauriBridge() {
       toast[TOAST_SEVERITY[n.level]](n.title, {
         description: n.body,
         id: n.id,
-        ...(n.sticky ? { duration: Infinity } : {}),
+        // Always set duration: sonner merges updates into an existing toast with
+        // the same id, so omitting it would keep a prior sticky `Infinity`.
+        duration: n.sticky ? Infinity : undefined,
       })
     }).then((u) => unlistens.push(u))
 
