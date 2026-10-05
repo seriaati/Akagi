@@ -1,19 +1,22 @@
 //! Capture transports — the layer that supplies WebSocket frames to the
 //! [`crate::bridge::Bridge`] parser.
 //!
-//! Two backends today:
+//! Three backends today:
 //! - [`hudsucker_backend::HudsuckerBackend`] — MITM proxy (legacy, requires
 //!   system proxy + CA cert install).
 //! - [`chromium::ChromiumBackend`] — controlled Chromium browser, intercepts
 //!   WebSocket frames via CDP. No proxy/CA setup.
+//! - [`hybrid_backend::HybridBackend`] — both: the controlled Chromium routes
+//!   through the MITM proxy, which owns frame capture; CDP only drives autoplay.
 //!
-//! Both implement [`CaptureBackend`] and feed frames through [`flow::FlowBridges`]
+//! All implement [`CaptureBackend`] and feed frames through [`flow::FlowBridges`]
 //! into the platform bridge, which emits mjai events on [`crate::event_bus::MjaiBus`].
 
 pub mod chromium;
 pub mod flow;
 pub mod http;
 pub mod hudsucker_backend;
+pub mod hybrid_backend;
 
 use crate::autoplay::AutoplayContext;
 use crate::config::Platform;
@@ -32,6 +35,7 @@ use tokio::sync::Notify;
 pub enum CaptureKind {
     Mitm,
     Chromium,
+    Hybrid,
 }
 
 impl CaptureKind {
@@ -39,6 +43,7 @@ impl CaptureKind {
         match self {
             CaptureKind::Mitm => "mitm",
             CaptureKind::Chromium => "chromium",
+            CaptureKind::Hybrid => "hybrid",
         }
     }
 }

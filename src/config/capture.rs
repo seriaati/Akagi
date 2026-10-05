@@ -1,10 +1,13 @@
 //! Capture-mode configuration: which transport supplies WebSocket frames
 //! to the bridge layer.
 //!
-//! Two modes:
+//! Three modes:
 //! - `Mitm` (default): hudsucker MITM proxy — see `[proxy]`.
 //! - `Chromium`: a Chromium browser launched and controlled by Akagi via
 //!   the Chrome DevTools Protocol.
+//! - `Hybrid`: both at once. The Akagi-launched Chromium routes its traffic
+//!   through the MITM proxy, which captures (and may rewrite) frames; CDP is
+//!   used only to drive autoplay.
 
 use serde::{Deserialize, Serialize};
 
@@ -75,6 +78,7 @@ pub enum CaptureMode {
     #[default]
     Mitm,
     Chromium,
+    Hybrid,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
