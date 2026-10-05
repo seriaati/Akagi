@@ -73,6 +73,10 @@ pub async fn get_config(state: State<'_, AppState>) -> CmdResult<AppConfig> {
     Ok(state.config.read().await.clone())
 }
 
+/// Shared toast id for `update_config`'s notifications, so the Settings
+/// page's auto-save replaces one toast instead of stacking one per edit.
+const CONFIG_SAVED_TOAST_ID: &str = "config-saved";
+
 /// Replace the entire config and persist it to the same file the app
 /// loaded from. Capture-related changes (mode, chromium settings, proxy
 /// settings) trigger an automatic supervisor restart so the user doesn't
@@ -136,11 +140,12 @@ pub async fn update_config(
         };
         let _ = state
             .notify_bus
-            .send(Notification::info("Capture restarted").body(body));
+            .send(Notification::info("Capture restarted").body(body).id(CONFIG_SAVED_TOAST_ID));
     } else {
         let _ = state.notify_bus.send(
             Notification::success("Config saved")
-                .body("Restart affected subsystems for changes to take effect."),
+                .body("Restart affected subsystems for changes to take effect.")
+                .id(CONFIG_SAVED_TOAST_ID),
         );
     }
 
