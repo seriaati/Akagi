@@ -400,6 +400,8 @@
     "proxy_enabled": "Proxy enabled",
     "block_telemetry": "Block game telemetry",
     "block_telemetry_hint": "Drop the game's Aliyun analytics beacons instead of forwarding them, so login stats and device / account identifiers never leave your machine. Many ad blockers already block this host, so a missing beacon is not a sign of a tool. On by default.",
+    "unlock_cosmetics": "Unlock all characters & cosmetics",
+    "unlock_cosmetics_hint": "Mahjong Soul only. Shows every character, skin, title, outfit item and loading screen as owned — on this machine only; other players still see your real account. Choices you make in the game are saved by Akagi instead of being sent to the server. Rewrites game traffic, so use at your own risk. Off by default.",
     "ca_dir_hint": "Where root certificate / keys are written.",
     "browser_executable": "Browser executable",
     "browser_executable_hint": "Leave blank to auto-detect.",

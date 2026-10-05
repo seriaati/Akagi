@@ -1285,6 +1285,18 @@ function CaptureCard({
             <span className="text-xs text-muted-foreground">
               {t('settings.block_telemetry_hint')}
             </span>
+            {draft.platform.kind === 'Majsoul' && (
+              <>
+                <Toggle
+                  label={t('settings.unlock_cosmetics')}
+                  value={draft.proxy.unlock_cosmetics}
+                  onChange={(v) => setDraft({ ...draft, proxy: { ...draft.proxy, unlock_cosmetics: v } })}
+                />
+                <span className="text-xs text-muted-foreground">
+                  {t('settings.unlock_cosmetics_hint')}
+                </span>
+              </>
+            )}
           </>
         )}
 
