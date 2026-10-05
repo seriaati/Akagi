@@ -172,6 +172,7 @@ impl Harness {
             ca_dir: tmp.path().join("ca"),
             rewrite_certificate_report: true,
             block_telemetry,
+            unlock_cosmetics: false,
         };
         let (stop, stop_rx) = oneshot::channel::<()>();
         let task = tokio::spawn(start_proxy(

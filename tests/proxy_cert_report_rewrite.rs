@@ -206,6 +206,7 @@ async fn the_report_that_leaves_describes_the_origin_not_akagi() {
             // This test exercises the rewrite path, which only runs when the
             // beacon is actually forwarded — so blocking must be off here.
             block_telemetry: false,
+            unlock_cosmetics: false,
         },
         HttpCaptureConfig::default(),
         Platform::Majsoul,

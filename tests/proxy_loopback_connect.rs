@@ -98,6 +98,7 @@ async fn loopback_connect_is_refused_without_blocking() {
         ca_dir: tmp.path().join("ca"),
         rewrite_certificate_report: true,
         block_telemetry: true,
+        unlock_cosmetics: false,
     };
 
     let notify = notify_bus();

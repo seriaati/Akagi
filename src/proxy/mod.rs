@@ -60,6 +60,7 @@ where
         certs.clone(),
         config.rewrite_certificate_report,
         config.block_telemetry,
+        config.unlock_cosmetics,
         inject,
     )?;
 

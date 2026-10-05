@@ -41,6 +41,17 @@ pub struct ProxyConfig {
     /// MITM-mode only: the chromium backend intercepts nothing to drop.
     /// See `src/proxy/handler.rs`.
     pub block_telemetry: bool,
+    /// Show every Mahjong Soul character, skin, title and cosmetic as owned
+    /// — on this machine only; other players still see the real account.
+    /// Cosmetic choices made in the game are saved locally instead of being
+    /// sent to the server.
+    ///
+    /// Off by default: it rewrites game traffic, which is a step further
+    /// than Akagi otherwise goes.
+    ///
+    /// MITM-mode only: the chromium backend can only observe WebSocket
+    /// frames. See `src/proxy/rewrite/majsoul_unlock/`.
+    pub unlock_cosmetics: bool,
 }
 
 impl Default for ProxyConfig {
@@ -51,6 +62,7 @@ impl Default for ProxyConfig {
             ca_dir: PathBuf::from("./ca"),
             rewrite_certificate_report: true,
             block_telemetry: true,
+            unlock_cosmetics: false,
         }
     }
 }
@@ -82,5 +94,6 @@ mod tests {
                 .expect("older config must still parse");
         assert!(cfg.rewrite_certificate_report);
         assert!(cfg.block_telemetry);
+        assert!(!cfg.unlock_cosmetics);
     }
 }

@@ -148,27 +148,37 @@ impl Default for LiqiParser {
 
 /// Wrapper { string name = 1; bytes data = 2; } — decoded inline to avoid
 /// needing the prost-generated module.
-struct Wrapper {
-    name: String,
-    data: Vec<u8>,
+pub(crate) struct Wrapper {
+    pub(crate) name: String,
+    pub(crate) data: Vec<u8>,
 }
 
-fn decode_wrapper(buf: &[u8]) -> Result<Wrapper> {
-    #[derive(::prost::Message)]
-    struct Raw {
-        #[prost(string, tag = "1")]
-        name: ::prost::alloc::string::String,
-        #[prost(bytes = "vec", tag = "2")]
-        data: ::prost::alloc::vec::Vec<u8>,
-    }
-    let raw = Raw::decode(buf).context("failed to decode Wrapper")?;
+#[derive(::prost::Message)]
+struct RawWrapper {
+    #[prost(string, tag = "1")]
+    name: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    data: ::prost::alloc::vec::Vec<u8>,
+}
+
+pub(crate) fn decode_wrapper(buf: &[u8]) -> Result<Wrapper> {
+    let raw = RawWrapper::decode(buf).context("failed to decode Wrapper")?;
     Ok(Wrapper {
         name: raw.name,
         data: raw.data,
     })
 }
 
-fn lookup_notify_type(name: &str) -> Result<MessageDescriptor> {
+/// Inverse of [`decode_wrapper`].
+pub(crate) fn encode_wrapper(name: &str, data: Vec<u8>) -> Vec<u8> {
+    RawWrapper {
+        name: name.to_string(),
+        data,
+    }
+    .encode_to_vec()
+}
+
+pub(crate) fn lookup_notify_type(name: &str) -> Result<MessageDescriptor> {
     let parts: Vec<&str> = name.split('.').filter(|s| !s.is_empty()).collect();
     ensure!(
         parts.len() == 2,
@@ -179,7 +189,7 @@ fn lookup_notify_type(name: &str) -> Result<MessageDescriptor> {
         .with_context(|| format!("unknown notify message: {fqn}"))
 }
 
-fn lookup_method_types(name: &str) -> Result<(MessageDescriptor, MessageDescriptor)> {
+pub(crate) fn lookup_method_types(name: &str) -> Result<(MessageDescriptor, MessageDescriptor)> {
     let parts: Vec<&str> = name.split('.').filter(|s| !s.is_empty()).collect();
     ensure!(
         parts.len() == 3,

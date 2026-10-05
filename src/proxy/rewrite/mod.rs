@@ -14,6 +14,8 @@
 //! - [`majsoul_cert`] — replaces the certificate report a Mahjong Soul
 //!   standalone client sends about its gateway connections. Read that
 //!   module before touching this one; the *why* lives there.
+//! - [`majsoul_unlock`] — shows every Mahjong Soul character and cosmetic
+//!   as owned, locally, and keeps cosmetic changes off the server.
 //!
 //! ## Adding one
 //!
@@ -24,3 +26,4 @@
 //! than the thing it was trying to fix.
 
 pub mod majsoul_cert;
+pub mod majsoul_unlock;

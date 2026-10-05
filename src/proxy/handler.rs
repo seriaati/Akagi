@@ -8,7 +8,10 @@ use crate::{
         InspectorWriter,
     },
     logger::{BinaryLogger, Session},
-    proxy::{certstore::CertStore, rewrite::majsoul_cert},
+    proxy::{
+        certstore::CertStore,
+        rewrite::{majsoul_cert, majsoul_unlock},
+    },
     schema::{
         CaptureSource, FrameDirection, FrameRaw, HttpAnnotation, HttpExchange, HttpPhase,
         InspectorEntry, Notification,
@@ -43,6 +46,17 @@ const TAG_SERVER_TO_CLIENT: u8 = 1;
 /// parser's `pending` map: the Request travels client→server and the
 /// matching Response travels server→client.
 type SharedBridge = Arc<StdMutex<Box<dyn Bridge>>>;
+
+/// Per-WS-upgrade state for `majsoul_unlock`, shared by both directions
+/// like [`SharedBridge`]: requests seen going up name the responses coming
+/// down, and frames the up leg wants shown to the client have to be sent on
+/// the down leg's sink.
+struct UnlockFlow {
+    state: StdMutex<majsoul_unlock::FlowState>,
+    to_client: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    /// Taken by the server→client leg when it starts.
+    to_client_rx: StdMutex<Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>>,
+}
 
 /// Per-flow inspector identity. The map is keyed on the same
 /// `SocketAddr` the bridges map uses, so they line up.
@@ -94,6 +108,10 @@ pub struct ProxyHandler {
     /// bridge's `in_game` flag). `None` in "log only" mode / tests.
     /// See `autoplay::inject`.
     inject: Option<crate::autoplay::inject::SharedInjectBus>,
+    /// Shows every Majsoul cosmetic as owned. `None` unless enabled and the
+    /// platform is Majsoul. See `rewrite::majsoul_unlock`.
+    unlock: Option<Arc<majsoul_unlock::Unlock>>,
+    unlock_flows: Arc<StdMutex<HashMap<SocketAddr, Arc<UnlockFlow>>>>,
 }
 
 impl ProxyHandler {
@@ -111,10 +129,16 @@ impl ProxyHandler {
         certs: Arc<CertStore>,
         rewrite_cert_report: bool,
         block_telemetry: bool,
+        unlock_cosmetics: bool,
         inject: Option<crate::autoplay::inject::SharedInjectBus>,
     ) -> anyhow::Result<Self> {
         let binary = session.binary_logger("proxy")?;
         let inspector = session.inspector();
+        let unlock = (unlock_cosmetics && platform == Platform::Majsoul).then(|| {
+            let path = crate::util::resolve_dir(std::path::Path::new("./majsoul_unlock.json"));
+            info!("cosmetic unlock on; choices saved to {}", path.display());
+            Arc::new(majsoul_unlock::Unlock::load(path))
+        });
         Ok(Self {
             session,
             binary,
@@ -133,6 +157,8 @@ impl ProxyHandler {
             rewrite_cert_report,
             block_telemetry,
             inject,
+            unlock,
+            unlock_flows: Arc::new(StdMutex::new(HashMap::new())),
         })
     }
 
@@ -431,6 +457,35 @@ impl ProxyHandler {
                 )))
             })
             .clone()
+    }
+
+    fn acquire_unlock_flow(&self, client: SocketAddr) -> Arc<UnlockFlow> {
+        let mut map = self
+            .unlock_flows
+            .lock()
+            .expect("unlock flows mutex poisoned");
+        map.entry(client)
+            .or_insert_with(|| {
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                Arc::new(UnlockFlow {
+                    state: StdMutex::new(majsoul_unlock::FlowState::default()),
+                    to_client: tx,
+                    to_client_rx: StdMutex::new(Some(rx)),
+                })
+            })
+            .clone()
+    }
+
+    /// Same lifetime rule as `release_bridge`.
+    fn release_unlock_flow(&self, client: SocketAddr, flow: Arc<UnlockFlow>) {
+        drop(flow);
+        let mut map = self
+            .unlock_flows
+            .lock()
+            .expect("unlock flows mutex poisoned");
+        if map.get(&client).is_some_and(|f| Arc::strong_count(f) == 1) {
+            map.remove(&client);
+        }
     }
 
     /// Drop our reference; if no other direction still holds the bridge,
@@ -847,6 +902,18 @@ impl WebSocketHandler for ProxyHandler {
         let server_uri = server_uri(&ctx);
         let bridge = self.acquire_bridge(client, &server_uri);
         let force_close = self.force_close.clone();
+        let unlock_flow = self
+            .unlock
+            .is_some()
+            .then(|| self.acquire_unlock_flow(client));
+        let mut to_client_rx = match (&ctx, &unlock_flow) {
+            (WebSocketContext::ServerToClient { .. }, Some(flow)) => flow
+                .to_client_rx
+                .lock()
+                .expect("unlock rx mutex poisoned")
+                .take(),
+            _ => None,
+        };
 
         // Riichi City autoplay injects on the client→server leg only — that
         // sink leads to the game server. The bridge's `in_game` gate keeps
@@ -921,11 +988,37 @@ impl WebSocketHandler for ProxyHandler {
                         }
                     }
                 }
+                frame = async {
+                    match to_client_rx.as_mut() {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    // The up leg holds the sender, so `None` only means the
+                    // flow is closing.
+                    let Some(frame) = frame else {
+                        to_client_rx = None;
+                        continue;
+                    };
+                    debug!("unlock: sending synthesized frame to client {client}");
+                    match sink.send(Message::Binary(frame.into())).await {
+                        Ok(()) => (),
+                        Err(tungstenite::Error::ConnectionClosed)
+                        | Err(tungstenite::Error::AlreadyClosed) => break,
+                        Err(e) => {
+                            error!("unlock: WebSocket send error: {e}");
+                            break;
+                        }
+                    }
+                }
                 next = stream.next() => {
                     let Some(message) = next else { break };
                     match message {
                         Ok(message) => {
-                            let Some(out) = self.handle_message(&ctx, message, &bridge).await else {
+                            let Some(out) = self
+                                .handle_message(&ctx, message, &bridge, unlock_flow.as_deref())
+                                .await
+                            else {
                                 continue;
                             };
                             match sink.send(out).await {
@@ -957,6 +1050,9 @@ impl WebSocketHandler for ProxyHandler {
         }
 
         self.release_bridge(client, bridge);
+        if let Some(flow) = unlock_flow {
+            self.release_unlock_flow(client, flow);
+        }
     }
 }
 
@@ -966,6 +1062,7 @@ impl ProxyHandler {
         ctx: &WebSocketContext,
         msg: Message,
         bridge: &SharedBridge,
+        unlock_flow: Option<&UnlockFlow>,
     ) -> Option<Message> {
         let client = client_addr(ctx);
         let (tag, dir, dir_arrow, uri) = match ctx {
@@ -993,6 +1090,27 @@ impl ProxyHandler {
                 };
                 self.record_frame(client, dir, FrameRaw::Binary(b64(buf)), buf.len(), &result);
                 self.dispatch_events(dir_arrow, &uri, result.events);
+                // After the bridge: it must see what the server really sent.
+                if let (Some(unlock), Some(flow)) = (&self.unlock, unlock_flow) {
+                    let outcome = {
+                        let mut state = flow.state.lock().expect("unlock flow mutex poisoned");
+                        unlock.rewrite(&mut state, buf)
+                    };
+                    if let Some(frame) = outcome.to_client {
+                        let _ = flow.to_client.send(frame);
+                    }
+                    match outcome.verdict {
+                        majsoul_unlock::Verdict::Forward => {}
+                        majsoul_unlock::Verdict::Replace(out) => {
+                            debug!("{dir_arrow} {uri} unlock rewrote frame");
+                            return Some(Message::Binary(out.into()));
+                        }
+                        majsoul_unlock::Verdict::Drop => {
+                            debug!("{dir_arrow} {uri} unlock dropped frame");
+                            return None;
+                        }
+                    }
+                }
             }
             Message::Text(t) => {
                 debug!("{dir_arrow} {uri} text len={}", t.len());
