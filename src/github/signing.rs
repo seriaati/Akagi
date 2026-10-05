@@ -23,7 +23,7 @@ use std::path::Path;
 
 /// Minisign public key for Akagi release assets (the base64 line of
 /// `minisign.pub` at the repo root).
-pub const RELEASE_PUBKEY_B64: &str = "RWS8snp2kWVCb5/eVPBx1g8F5JWKL8l6FudAAB1Eaw184bw9a183Qdbt";
+pub const RELEASE_PUBKEY_B64: &str = "RWTFmjxPzYJzNEJYILf+j/UvLmaOckraQzVqZp/YwVFM6ckliSj+6heh";
 
 /// Verify `file` against `minisig` (the text of a `.minisig` document)
 /// using the embedded Akagi release key. `expected_trusted_comment` is

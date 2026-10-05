@@ -1329,10 +1329,10 @@ pub async fn delete_game_history_entry(id: String, state: State<'_, AppState>) -
     Ok(removed)
 }
 
-/// `shinkuan/Akagi` is the canonical upstream — kept here as a const
+/// `seriaati/Akagi` is the release source for this fork — kept here as a const
 /// instead of plumbing through config so the user can't accidentally
 /// point the auto-updater at a fork.
-const UPSTREAM_REPO: &str = "shinkuan/Akagi";
+const UPSTREAM_REPO: &str = "seriaati/Akagi";
 
 /// One-shot "is there a newer release?" — frontend calls this on app
 /// launch (with a 6h cache) and from the Settings "Check for updates"
