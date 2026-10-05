@@ -214,7 +214,7 @@ async fn the_report_that_leaves_describes_the_origin_not_akagi() {
         None,
         None,
         Arc::new(Notify::new()),
-        None,
+        akagi::bridge::BridgeHooks::default(),
         async move {
             stop_rx.await.unwrap_or_default();
         },

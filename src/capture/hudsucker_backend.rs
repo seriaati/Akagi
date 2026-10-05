@@ -17,6 +17,10 @@ pub struct HudsuckerBackend {
     /// kicks every in-flight WS so existing flows actually disconnect (not
     /// just drain naturally) when the supervisor stops the backend.
     pub force_close: Arc<Notify>,
+    /// Hybrid mode: a CDP-controlled browser is in front of this proxy, so
+    /// the bridges also feed the page-autoplay slots (time budget, input
+    /// watch, Tenhou state) that the chromium backend would otherwise fill.
+    page_autoplay: bool,
 }
 
 impl HudsuckerBackend {
@@ -29,7 +33,14 @@ impl HudsuckerBackend {
             proxy_cfg,
             http_cfg,
             force_close,
+            page_autoplay: false,
         }
+    }
+
+    /// See [`Self::page_autoplay`].
+    pub fn with_page_autoplay(mut self) -> Self {
+        self.page_autoplay = true;
+        self
     }
 }
 
@@ -45,6 +56,24 @@ impl CaptureBackend for HudsuckerBackend {
             shutdown.wait().await;
         };
 
+        let hooks = ctx
+            .autoplay
+            .as_ref()
+            .map(|a| {
+                let page = self.page_autoplay;
+                crate::bridge::BridgeHooks {
+                    time_budget: page.then(|| a.time_budget.clone()),
+                    input_watch: page.then(|| a.input_watch.clone()),
+                    tenhou_state: page.then(|| a.tenhou_state.clone()),
+                    // Riichi City autoplay injects frames through the relay;
+                    // other platforms ignore the channel (their autoplay
+                    // clicks a page).
+                    riichi_inject: Some(a.inject.clone()),
+                    notify: None,
+                }
+            })
+            .unwrap_or_default();
+
         crate::proxy::start_proxy(
             self.proxy_cfg,
             self.http_cfg,
@@ -53,9 +82,7 @@ impl CaptureBackend for HudsuckerBackend {
             Some(ctx.mjai_bus),
             Some(ctx.notify_bus),
             self.force_close,
-            // Riichi City autoplay injects frames through the relay; other
-            // platforms ignore the channel (their autoplay clicks a page).
-            ctx.autoplay.as_ref().map(|a| a.inject.clone()),
+            hooks,
             shutdown_fut,
         )
         .await

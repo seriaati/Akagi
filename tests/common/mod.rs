@@ -183,7 +183,7 @@ impl Harness {
             None,
             None,
             Arc::new(Notify::new()),
-            None,
+            akagi::bridge::BridgeHooks::default(),
             async move {
                 stop_rx.await.unwrap_or_default();
             },

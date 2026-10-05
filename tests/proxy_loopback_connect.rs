@@ -113,7 +113,7 @@ async fn loopback_connect_is_refused_without_blocking() {
         None,
         Some(notify),
         Arc::new(Notify::new()),
-        None,
+        akagi::bridge::BridgeHooks::default(),
         async move {
             stop_rx.await.unwrap_or_default();
         },

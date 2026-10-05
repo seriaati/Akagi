@@ -103,11 +103,12 @@ pub struct ProxyHandler {
     /// Whether to drop the game's Aliyun SLS telemetry beacons instead of
     /// forwarding them. See `block_telemetry_beacon`.
     block_telemetry: bool,
-    /// Frame injection channel for Riichi City autoplay: the client→server
-    /// relay forwards what arrives here to the game server (gated on the
-    /// bridge's `in_game` flag). `None` in "log only" mode / tests.
+    /// Autoplay slots handed to every bridge. `riichi_inject` doubles as the
+    /// frame injection channel for Riichi City autoplay: the client→server
+    /// relay forwards what arrives there to the game server (gated on the
+    /// bridge's `in_game` flag). Empty in "log only" mode / tests.
     /// See `autoplay::inject`.
-    inject: Option<crate::autoplay::inject::SharedInjectBus>,
+    hooks: bridge::BridgeHooks,
     /// Shows every Majsoul cosmetic as owned. `None` unless enabled and the
     /// platform is Majsoul. See `rewrite::majsoul_unlock`.
     unlock: Option<Arc<majsoul_unlock::Unlock>>,
@@ -130,7 +131,7 @@ impl ProxyHandler {
         rewrite_cert_report: bool,
         block_telemetry: bool,
         unlock_cosmetics: bool,
-        inject: Option<crate::autoplay::inject::SharedInjectBus>,
+        hooks: bridge::BridgeHooks,
     ) -> anyhow::Result<Self> {
         let binary = session.binary_logger("proxy")?;
         let inspector = session.inspector();
@@ -156,7 +157,7 @@ impl ProxyHandler {
             certs,
             rewrite_cert_report,
             block_telemetry,
-            inject,
+            hooks,
             unlock,
             unlock_flows: Arc::new(StdMutex::new(HashMap::new())),
         })
@@ -435,19 +436,19 @@ impl ProxyHandler {
                             None
                         }
                     };
-                // No time-budget slot and no input watch: the MITM path
-                // has no `Page` handle, so click-based autoplay can never
-                // run here. The one slot the MITM path DOES wire is Riichi
-                // City's frame-injection gate — its autoplay transmits
-                // protocol frames rather than clicking a page.
+                // The page slots (time budget, input watch, Tenhou state)
+                // are only filled in hybrid mode, where a CDP-controlled
+                // browser sits in front of this proxy. Riichi City's
+                // frame-injection gate is wired whenever autoplay is — its
+                // autoplay transmits protocol frames rather than clicking.
                 let hooks = bridge::BridgeHooks {
                     riichi_inject: if self.platform == Platform::RiichiCity {
-                        self.inject.clone()
+                        self.hooks.riichi_inject.clone()
                     } else {
                         None
                     },
                     notify: self.notify_tx.clone(),
-                    ..bridge::BridgeHooks::default()
+                    ..self.hooks.clone()
                 };
                 Arc::new(StdMutex::new(bridge::for_platform(
                     self.platform,
@@ -920,7 +921,7 @@ impl WebSocketHandler for ProxyHandler {
         // frames off the client's non-gameplay sockets (the client keeps
         // several flows open; only the one carrying a game should ever see
         // an injected command).
-        let mut inject_rx = match (&ctx, &self.inject) {
+        let mut inject_rx = match (&ctx, &self.hooks.riichi_inject) {
             (WebSocketContext::ClientToServer { .. }, Some(bus)) => Some(bus.subscribe()),
             _ => None,
         };
@@ -948,7 +949,8 @@ impl WebSocketHandler for ProxyHandler {
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     };
                     let in_game = self
-                        .inject
+                        .hooks
+                        .riichi_inject
                         .as_ref()
                         .is_some_and(|bus| bus.in_game());
                     if frame.gameplay && !in_game {
