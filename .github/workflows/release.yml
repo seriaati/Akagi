@@ -51,10 +51,6 @@ jobs:
           # run on most user machines without forced glibc upgrades.
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-          - os: macos-14
-            target: aarch64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -64,17 +60,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
-      # macos-14 ships a Homebrew `cargo` shim at /opt/homebrew/bin/cargo
-      # that forwards to `rustup-init`, and Homebrew's bin precedes
-      # ~/.cargo/bin in PATH — so plain `cargo <subcmd>` (including
-      # `cargo tauri build`) resolves to rustup-init and fails with
-      # "unexpected argument 'tauri'". Prepend the dtolnay-installed cargo
-      # to GITHUB_PATH so every later step sees the real binary first.
-      - name: Prefer ~/.cargo/bin over Homebrew rustup-init (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
