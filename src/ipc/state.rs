@@ -131,6 +131,9 @@ pub struct AppState {
     /// `meta_source` are security policy inputs, and a compromised
     /// frontend must not get to assert them.
     pub pending_update: Arc<RwLock<Option<crate::updater::UpdateInfo>>>,
+    /// The frontend's UI language, for text the backend renders itself
+    /// (Discord Rich Presence). Set by `set_ui_language`; not persisted.
+    pub ui_lang: Arc<RwLock<crate::discord::Lang>>,
 }
 
 impl AppState {
@@ -178,6 +181,7 @@ impl AppState {
             autoplay_manager_started: Arc::new(AtomicBool::new(false)),
             updater_lock: Arc::new(Mutex::new(())),
             pending_update: Arc::new(RwLock::new(None)),
+            ui_lang: Arc::new(RwLock::new(crate::discord::Lang::default())),
         }
     }
 }

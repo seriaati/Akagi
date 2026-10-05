@@ -235,6 +235,15 @@ pub async fn set_overlay_enabled(
     Ok(())
 }
 
+/// Records the frontend's UI language (an i18next tag such as `"zh-TW"`) so
+/// the Discord presence is written in it. The frontend sends it on start and
+/// on every language change.
+#[tauri::command]
+pub async fn set_ui_language(lang: String, state: State<'_, AppState>) -> CmdResult<()> {
+    *state.ui_lang.write().await = crate::discord::Lang::from_tag(&lang);
+    Ok(())
+}
+
 /// Synthetic `BotInfo` entries for the built-in native bots. They have no
 /// directory, no `pyproject.toml`, and are always "ready" (weights are embedded
 /// in the binary — nothing to install).
@@ -1750,6 +1759,7 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::get_config,
             $crate::ipc::commands::update_config,
             $crate::ipc::commands::set_overlay_enabled,
+            $crate::ipc::commands::set_ui_language,
             $crate::ipc::commands::list_bots,
             $crate::ipc::commands::set_active_bot,
             $crate::ipc::commands::get_bot_settings,

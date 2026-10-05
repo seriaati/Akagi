@@ -246,7 +246,11 @@ pub fn run() {
                 // Discord Rich Presence. Always spawned; it stays silent until
                 // `[discord]` is enabled with a client ID, and re-reads that
                 // section on its own, so toggling it needs no relaunch.
-                discord::spawn(state.config.clone(), mjai_bus.subscribe());
+                discord::spawn(
+                    state.config.clone(),
+                    state.ui_lang.clone(),
+                    mjai_bus.subscribe(),
+                );
 
                 if bot_enabled {
                     let cfg_for_bot = state.config.clone();

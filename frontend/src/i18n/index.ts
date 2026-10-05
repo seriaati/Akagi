@@ -6,6 +6,7 @@ import en from './resources/en.json'
 import zhTW from './resources/zh-TW.json'
 import zhCN from './resources/zh-CN.json'
 import ja from './resources/ja.json'
+import { invoke } from '../lib/tauri'
 
 export const SUPPORTED_LANGS = ['en', 'zh-TW', 'zh-CN', 'ja'] as const
 export type SupportedLang = (typeof SUPPORTED_LANGS)[number]
@@ -16,6 +17,12 @@ export const LANG_LABELS: Record<SupportedLang, string> = {
   'zh-CN': '简体中文',
   'ja': '日本語',
 }
+
+// The backend writes the Discord presence in the UI language. Registered
+// before init so the detected language is sent too.
+i18n.on('languageChanged', (lng) => {
+  invoke('set_ui_language', { lang: lng }).catch(() => {})
+})
 
 void i18n
   .use(LanguageDetector)

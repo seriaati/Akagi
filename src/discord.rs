@@ -29,6 +29,29 @@ use tracing::{debug, info, warn};
 /// Discord itself only applies one activity update per 15s.
 const RETRY: Duration = Duration::from_secs(15);
 
+/// Language the presence is written in: the app's UI language, which the
+/// frontend reports via `set_ui_language`. Unknown tags fall back to English.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Lang {
+    #[default]
+    En,
+    ZhTw,
+    ZhCn,
+    Ja,
+}
+
+impl Lang {
+    /// From an i18next language tag (`SUPPORTED_LANGS` in the frontend).
+    pub fn from_tag(tag: &str) -> Self {
+        match tag {
+            "zh-TW" => Lang::ZhTw,
+            "zh-CN" => Lang::ZhCn,
+            "ja" => Lang::Ja,
+            _ => Lang::En,
+        }
+    }
+}
+
 /// What Discord should show. Compared against the last one sent so a
 /// `dahai` that changes nothing visible costs nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,40 +122,66 @@ fn apply(game: &mut Option<Game>, event: &MjaiEvent, now_ms: i64) {
 }
 
 impl Game {
-    fn presence(&self, platform: Platform) -> Presence {
-        let platform = match platform {
-            Platform::Majsoul => "Mahjong Soul",
-            Platform::Tenhou => "Tenhou",
-            Platform::RiichiCity => "Riichi City",
+    fn presence(&self, platform: Platform, lang: Lang) -> Presence {
+        let platform = match (platform, lang) {
+            (Platform::Majsoul, Lang::En) => "Mahjong Soul",
+            (Platform::Majsoul, _) => "雀魂",
+            (Platform::Tenhou, Lang::En) => "Tenhou",
+            (Platform::Tenhou, Lang::ZhCn) => "天凤",
+            (Platform::Tenhou, _) => "天鳳",
+            (Platform::RiichiCity, Lang::En) => "Riichi City",
+            (Platform::RiichiCity, _) => "麻雀一番街",
         };
-        let length = match self.match_mode {
-            Some(1 | 11) => " East",
-            Some(2 | 12) => " East-South",
+        let players = match (lang, self.num_players) {
+            (Lang::En, n) => format!("{n}P"),
+            (_, 3) => "三人".to_string(),
+            (_, 4) => "四人".to_string(),
+            (_, n) => format!("{n}人"),
+        };
+        let length = match (self.match_mode, lang) {
+            (Some(1 | 11), Lang::En) => " East",
+            (Some(1 | 11), Lang::ZhCn) => "东风",
+            (Some(1 | 11), _) => "東風",
+            (Some(2 | 12), Lang::En) => " East-South",
+            (Some(2 | 12), Lang::ZhTw) => "半莊",
+            (Some(2 | 12), Lang::ZhCn) => "半庄",
+            (Some(2 | 12), Lang::Ja) => "半荘",
             _ => "",
         };
-        let details = format!("{platform} · {}P{length}", self.num_players);
+        let details = format!("{platform} · {players}{length}");
 
         let mut parts = Vec::new();
         if let Some(r) = &self.round {
-            let wind = match r.bakaze.as_str() {
-                "E" => "East",
-                "S" => "South",
-                "W" => "West",
-                "N" => "North",
-                other => other,
-            };
-            parts.push(format!("{wind} {}", r.kyoku));
+            let wind = wind(&r.bakaze, lang);
+            parts.push(match lang {
+                Lang::En => format!("{wind} {}", r.kyoku),
+                _ => format!("{wind}{}局", r.kyoku),
+            });
             if r.honba > 0 {
-                parts.push(format!("{} honba", r.honba));
+                parts.push(match lang {
+                    Lang::En => format!("{} honba", r.honba),
+                    Lang::ZhCn => format!("{}本场", r.honba),
+                    _ => format!("{}本場", r.honba),
+                });
             }
             let seat = self.seat.map(usize::from);
             if let Some(seat) = seat.filter(|&s| s < r.scores.len()) {
-                parts.push(ordinal(rank(&r.scores, seat)).to_string());
+                let rank = rank(&r.scores, seat);
+                parts.push(match lang {
+                    Lang::En => ordinal(rank).to_string(),
+                    _ => format!("{rank}位"),
+                });
                 parts.push(thousands(r.scores[seat]));
             }
         }
         let state = if parts.is_empty() {
-            "Starting".to_string()
+            match lang {
+                Lang::En => "Starting",
+                Lang::ZhTw => "開局中",
+                Lang::ZhCn => "开局中",
+                Lang::Ja => "対局開始",
+            }
+            .to_string()
         } else {
             parts.join(" · ")
         };
@@ -143,6 +192,22 @@ impl Game {
             start_ms: self.start_ms,
         }
     }
+}
+
+fn wind(bakaze: &str, lang: Lang) -> &str {
+    let i = match bakaze {
+        "E" => 0,
+        "S" => 1,
+        "W" => 2,
+        "N" => 3,
+        other => return other,
+    };
+    let names = match lang {
+        Lang::En => ["East", "South", "West", "North"],
+        Lang::ZhCn => ["东", "南", "西", "北"],
+        Lang::ZhTw | Lang::Ja => ["東", "南", "西", "北"],
+    };
+    names[i]
 }
 
 /// 1-based placement of `seat`. Ties go to the lower seat — seat 0 is the
@@ -181,8 +246,13 @@ fn thousands(n: i32) -> String {
 }
 
 /// Start the presence task and its IPC thread. Does nothing visible until
-/// `[discord]` is enabled with a client ID and a game starts.
-pub fn spawn(config: Arc<RwLock<AppConfig>>, mut events: broadcast::Receiver<MjaiEvent>) {
+/// `[discord]` is enabled with a client ID and a game starts. A `lang`
+/// change mid-game shows up with the next event.
+pub fn spawn(
+    config: Arc<RwLock<AppConfig>>,
+    lang: Arc<RwLock<Lang>>,
+    mut events: broadcast::Receiver<MjaiEvent>,
+) {
     let (tx, rx) = mpsc::channel();
     let worker_cfg = config.clone();
     if let Err(e) = std::thread::Builder::new()
@@ -205,7 +275,8 @@ pub fn spawn(config: Arc<RwLock<AppConfig>>, mut events: broadcast::Receiver<Mja
             };
             apply(&mut game, &event, chrono::Utc::now().timestamp_millis());
             let platform = config.read().await.platform.kind;
-            let next = game.as_ref().map(|g| g.presence(platform));
+            let lang = *lang.read().await;
+            let next = game.as_ref().map(|g| g.presence(platform, lang));
             if next != sent {
                 if tx.send(next.clone()).is_err() {
                     return;
@@ -330,11 +401,15 @@ mod tests {
     }
 
     fn presence(events: &[MjaiEvent], platform: Platform) -> Option<Presence> {
+        presence_in(events, platform, Lang::En)
+    }
+
+    fn presence_in(events: &[MjaiEvent], platform: Platform, lang: Lang) -> Option<Presence> {
         let mut game = None;
         for e in events {
             apply(&mut game, e, 1_000);
         }
-        game.map(|g| g.presence(platform))
+        game.map(|g| g.presence(platform, lang))
     }
 
     #[test]
@@ -372,6 +447,30 @@ mod tests {
         let p = presence(&events, Platform::Tenhou).unwrap();
         assert_eq!(p.details, "Tenhou · 3P");
         assert_eq!(p.state, "East 1");
+    }
+
+    #[test]
+    fn follows_the_ui_language() {
+        let events = [
+            start_game(Some(1), 4, Some(2)),
+            start_kyoku("S", 2, 1, vec![31_000, 28_400, 28_400, 12_200]),
+        ];
+        let p = presence_in(&events, Platform::Majsoul, Lang::ZhTw).unwrap();
+        assert_eq!(p.details, "雀魂 · 四人半莊");
+        assert_eq!(p.state, "南2局 · 1本場 · 2位 · 28,400");
+
+        let p = presence_in(&events[..1], Platform::Tenhou, Lang::ZhCn).unwrap();
+        assert_eq!(p.details, "天凤 · 四人半庄");
+        assert_eq!(p.state, "开局中");
+    }
+
+    #[test]
+    fn language_tags() {
+        assert_eq!(Lang::from_tag("zh-TW"), Lang::ZhTw);
+        assert_eq!(Lang::from_tag("zh-CN"), Lang::ZhCn);
+        assert_eq!(Lang::from_tag("ja"), Lang::Ja);
+        assert_eq!(Lang::from_tag("en"), Lang::En);
+        assert_eq!(Lang::from_tag("fr"), Lang::En);
     }
 
     #[test]
