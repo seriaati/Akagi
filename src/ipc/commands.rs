@@ -138,9 +138,11 @@ pub async fn update_config(
         } else {
             "Applied capture / proxy config changes."
         };
-        let _ = state
-            .notify_bus
-            .send(Notification::info("Capture restarted").body(body).id(CONFIG_SAVED_TOAST_ID));
+        let _ = state.notify_bus.send(
+            Notification::info("Capture restarted")
+                .body(body)
+                .id(CONFIG_SAVED_TOAST_ID),
+        );
     } else {
         let _ = state.notify_bus.send(
             Notification::success("Config saved")
