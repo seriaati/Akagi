@@ -90,12 +90,17 @@ export function Settings() {
   // reload, and stops a draft the backend rejected from being retried in a
   // loop (the next edit makes a new draft object, which is retried).
   const lastSentRef = useRef<AppConfig | null>(null)
+  // True while `update_config` is in flight. The backend emits events during
+  // the call (e.g. `overlay-config` from `overlay::reconcile`) that patch the
+  // store while it still holds the *pre-save* config; syncing the draft from
+  // that would revert the edit being saved and auto-save the old value back.
+  const inFlightRef = useRef(false)
 
   useEffect(() => {
     // Sync the editable draft from the store when it (re)loads — but not
-    // when the change is our own save, which would clobber edits made while
-    // that save was in flight.
-    if (stored && stored !== lastSentRef.current) setDraft(stored)
+    // when the change is our own save, or lands while a save is in flight,
+    // either of which would clobber the edits being saved.
+    if (stored && stored !== lastSentRef.current && !inFlightRef.current) setDraft(stored)
   }, [stored])
 
   useEffect(() => {
@@ -109,6 +114,7 @@ export function Settings() {
   const persist = useCallback(
     async (next: AppConfig) => {
       lastSentRef.current = next
+      inFlightRef.current = true
       setSaving(true)
       setErr(null)
       try {
@@ -117,6 +123,7 @@ export function Settings() {
       } catch (e) {
         setErr(String(e))
       } finally {
+        inFlightRef.current = false
         setSaving(false)
       }
     },
