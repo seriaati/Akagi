@@ -66,3 +66,6 @@ native_bot/out/
 
 # ZCode session artifacts
 .zcode/
+
+# Serena (code-intelligence MCP) project data
+.serena/
