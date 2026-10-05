@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Link, useBlocker } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getVersion } from '@tauri-apps/api/app'
 import { toast } from 'sonner'
@@ -70,6 +70,8 @@ import type {
   PlatformKind,
 } from '@/types'
 
+const AUTOSAVE_DELAY_MS = 600
+
 export function Settings() {
   const { t, i18n } = useTranslation()
   const stored = useConfigStore((s) => s.config)
@@ -83,10 +85,17 @@ export function Settings() {
   // while the platform is Riichi City).
   const [rcAutoplayWarnOpen, setRcAutoplayWarnOpen] = useState(false)
 
+  // The config most recently sent to `update_config`. Lets the sync effect
+  // tell our own auto-save landing in the store apart from an external
+  // reload, and stops a draft the backend rejected from being retried in a
+  // loop (the next edit makes a new draft object, which is retried).
+  const lastSentRef = useRef<AppConfig | null>(null)
+
   useEffect(() => {
-    // Sync the editable draft from the store when it (re)loads.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (stored) setDraft(stored)
+    // Sync the editable draft from the store when it (re)loads — but not
+    // when the change is our own save, which would clobber edits made while
+    // that save was in flight.
+    if (stored && stored !== lastSentRef.current) setDraft(stored)
   }, [stored])
 
   useEffect(() => {
@@ -97,56 +106,47 @@ export function Settings() {
 
   const dirty = !!draft && !!stored && JSON.stringify(draft) !== JSON.stringify(stored)
 
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      dirty && currentLocation.pathname !== nextLocation.pathname,
+  const persist = useCallback(
+    async (next: AppConfig) => {
+      lastSentRef.current = next
+      setSaving(true)
+      setErr(null)
+      try {
+        await invoke('update_config', { newConfig: next })
+        setStored(next)
+      } catch (e) {
+        setErr(String(e))
+      } finally {
+        setSaving(false)
+      }
+    },
+    [setStored],
   )
 
+  // Auto-save: debounced so typing in a text field doesn't hit the backend
+  // (and possibly restart capture) on every keystroke. Saves are serialized:
+  // edits made while one is in flight are picked up once it settles.
   useEffect(() => {
-    if (!dirty) return
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-      e.returnValue = ''
-    }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty])
+    if (!draft || !dirty || saving || draft === lastSentRef.current) return
+    const id = setTimeout(() => void persist(draft), AUTOSAVE_DELAY_MS)
+    return () => clearTimeout(id)
+  }, [draft, dirty, saving, persist])
+
+  // Flush a still-pending debounced save when leaving the page.
+  const unsavedRef = useRef<AppConfig | null>(null)
+  useEffect(() => {
+    unsavedRef.current = dirty ? draft : null
+  }, [draft, dirty])
+  useEffect(
+    () => () => {
+      const pending = unsavedRef.current
+      if (pending && pending !== lastSentRef.current) void persist(pending)
+    },
+    [persist],
+  )
 
   if (!draft) {
     return <div className="p-6 text-muted-foreground">{t('settings.loading_config')}</div>
-  }
-
-  const save = async () => {
-    setSaving(true)
-    setErr(null)
-    try {
-      await invoke('update_config', { newConfig: draft })
-      setStored(draft)
-    } catch (e) {
-      setErr(String(e))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const saveAndLeave = async () => {
-    setSaving(true)
-    setErr(null)
-    try {
-      await invoke('update_config', { newConfig: draft })
-      setStored(draft)
-      blocker.proceed?.()
-    } catch (e) {
-      setErr(String(e))
-      blocker.reset?.()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const discardAndLeave = () => {
-    setDraft(stored)
-    blocker.proceed?.()
   }
 
   return (
@@ -157,12 +157,9 @@ export function Settings() {
           <Button variant="ghost" asChild>
             <Link to="/setup?rerun=1">{t('settings.rerun_setup')}</Link>
           </Button>
-          <Button variant="outline" onClick={() => setDraft(stored)} disabled={!dirty || saving}>
-            {t('common.reset')}
-          </Button>
-          <Button onClick={save} disabled={!dirty || saving}>
-            {saving ? t('common.saving') : t('common.save')}
-          </Button>
+          {saving && (
+            <span className="self-center text-sm text-muted-foreground">{t('common.saving')}</span>
+          )}
         </div>
       </header>
 
@@ -301,33 +298,6 @@ export function Settings() {
       <NetworkCard draft={draft} setDraft={setDraft} />
 
       <UpdatesCard />
-
-      <Dialog
-        open={blocker.state === 'blocked'}
-        onOpenChange={(open) => {
-          if (!open) blocker.reset?.()
-        }}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>{t('settings.unsaved_title')}</DialogTitle>
-            <DialogDescription>
-              {t('settings.unsaved_desc')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="bg-transparent p-0 border-0 mx-0 mb-0">
-            <Button variant="outline" size="sm" onClick={() => blocker.reset?.()} disabled={saving}>
-              {t('common.stay')}
-            </Button>
-            <Button variant="destructive" size="sm" onClick={discardAndLeave} disabled={saving}>
-              {t('common.discard')}
-            </Button>
-            <Button size="sm" onClick={saveAndLeave} disabled={saving}>
-              {saving ? t('common.saving') : t('settings.save_and_leave')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={rcAutoplayWarnOpen} onOpenChange={setRcAutoplayWarnOpen}>
         <DialogContent>
