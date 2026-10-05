@@ -1,6 +1,7 @@
 mod autoplay;
 mod bot;
 mod capture;
+mod discord;
 mod general;
 mod logging;
 mod merge;
@@ -14,6 +15,7 @@ pub use autoplay::{
 };
 pub use bot::{BotConfig, NativeApiConfig};
 pub use capture::{CaptureConfig, CaptureMode, ChromiumConfig, HttpCaptureConfig};
+pub use discord::DiscordConfig;
 pub use general::GeneralConfig;
 pub use logging::LoggingConfig;
 pub use merge::merge_into;
@@ -37,6 +39,7 @@ pub struct AppConfig {
     pub autoplay: AutoplayConfig,
     pub overlay: OverlayConfig,
     pub network: NetworkConfig,
+    pub discord: DiscordConfig,
 }
 
 enum ResolvedPath {

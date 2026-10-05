@@ -489,7 +489,13 @@
     "overlay_top_n": "Suggestions shown",
     "overlay_opacity": "Opacity",
     "overlay_always_on_top": "Keep above other windows",
-    "overlay_always_on_top_hint": "Turn this off to park the overlay on a second monitor. Note that a game running in exclusive fullscreen draws over every always-on-top window — use borderless or windowed mode."
+    "overlay_always_on_top_hint": "Turn this off to park the overlay on a second monitor. Note that a game running in exclusive fullscreen draws over every always-on-top window — use borderless or windowed mode.",
+    "discord_title": "Discord",
+    "discord_enabled": "Show game in Discord status",
+    "discord_enabled_hint": "While a game is running, your Discord profile shows the platform, mode, round, your placement and points, and how long you've been playing. Visible to everyone who can see your Discord activity. Discord must be running on this computer.",
+    "discord_client_id": "Discord application ID",
+    "discord_client_id_hint": "Create an application at discord.com/developers and paste its Application ID. Discord shows the application's name as \"Playing …\".",
+    "discord_client_id_invalid": "An application ID is digits only."
   },
   "setup": {
     "title": "Akagi Setup",

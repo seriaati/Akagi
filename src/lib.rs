@@ -5,6 +5,7 @@ pub mod bridge;
 pub mod capture;
 pub mod cli;
 pub mod config;
+pub mod discord;
 pub mod event_bus;
 pub mod game_state;
 pub mod github;
@@ -241,6 +242,11 @@ pub fn run() {
                     history_platform.clone(),
                     history_rx,
                 ));
+
+                // Discord Rich Presence. Always spawned; it stays silent until
+                // `[discord]` is enabled with a client ID, and re-reads that
+                // section on its own, so toggling it needs no relaunch.
+                discord::spawn(state.config.clone(), mjai_bus.subscribe());
 
                 if bot_enabled {
                     let cfg_for_bot = state.config.clone();

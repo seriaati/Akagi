@@ -489,7 +489,13 @@
     "overlay_top_n": "表示する候補数",
     "overlay_opacity": "不透明度",
     "overlay_always_on_top": "常に最前面に表示",
-    "overlay_always_on_top_hint": "サブモニターに置く場合はオフにしてください。なお、ゲームが排他的フルスクリーンの場合は最前面ウィンドウがすべて隠れるため、ボーダーレスまたはウィンドウモードをご利用ください。"
+    "overlay_always_on_top_hint": "サブモニターに置く場合はオフにしてください。なお、ゲームが排他的フルスクリーンの場合は最前面ウィンドウがすべて隠れるため、ボーダーレスまたはウィンドウモードをご利用ください。",
+    "discord_title": "Discord",
+    "discord_enabled": "Discord のステータスに対局を表示",
+    "discord_enabled_hint": "対局中、Discord のプロフィールにプラットフォーム・ルール・局・順位と点数・経過時間を表示します。Discord のアクティビティを閲覧できる全員に見えます。このコンピューターで Discord が起動している必要があります。",
+    "discord_client_id": "Discord アプリケーション ID",
+    "discord_client_id_hint": "discord.com/developers でアプリケーションを作成し、その Application ID を貼り付けてください。「プレイ中: …」にはアプリケーション名が表示されます。",
+    "discord_client_id_invalid": "アプリケーション ID は数字のみです。"
   },
   "setup": {
     "title": "Akagi セットアップ",

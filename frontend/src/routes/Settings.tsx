@@ -63,6 +63,7 @@ import type {
   DelayMode,
   DelayModelConfig,
   DetectedBrowser,
+  DiscordConfig,
   GithubMirrorMode,
   NetworkConfig,
   OverlayConfig,
@@ -214,6 +215,8 @@ export function Settings() {
       <AppearanceCard />
 
       <OverlayCard draft={draft} setDraft={setDraft} />
+
+      <DiscordCard draft={draft} setDraft={setDraft} />
 
       <PlatformCard
         draft={draft}
@@ -486,6 +489,60 @@ function OverlayCard({
             {t('settings.overlay_always_on_top_hint')}
           </span>
         </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** Discord Rich Presence. Off by default; the backend shows a presence only
+ *  while a game is running, and picks up saved changes within ~15s. */
+function DiscordCard({
+  draft,
+  setDraft,
+}: {
+  draft: AppConfig
+  setDraft: (c: AppConfig) => void
+}) {
+  const { t } = useTranslation()
+  const d = draft.discord
+  const patch = (p: Partial<DiscordConfig>) =>
+    setDraft({ ...draft, discord: { ...d, ...p } })
+  const id = d.client_id.trim()
+  const idInvalid = id !== '' && !/^\d+$/.test(id)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('settings.discord_title')}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="grid gap-1.5">
+          <Toggle
+            label={t('settings.discord_enabled')}
+            value={d.enabled}
+            onChange={(v) => patch({ enabled: v })}
+          />
+          <span className="text-xs text-muted-foreground">
+            {t('settings.discord_enabled_hint')}
+          </span>
+        </div>
+        <Field
+          label={t('settings.discord_client_id')}
+          hint={t('settings.discord_client_id_hint')}
+        >
+          <Input
+            value={d.client_id}
+            onChange={(e) => patch({ client_id: e.target.value })}
+            placeholder="123456789012345678"
+            className="font-mono"
+            disabled={!d.enabled}
+          />
+          {idInvalid && (
+            <span className="text-xs text-red-400">
+              {t('settings.discord_client_id_invalid')}
+            </span>
+          )}
+        </Field>
       </CardContent>
     </Card>
   )

@@ -187,6 +187,13 @@ export type NetworkConfig = {
   github_custom_mirror: string
 }
 
+/** `[discord]` section. Mirrors `crate::config::DiscordConfig`. */
+export type DiscordConfig = {
+  enabled: boolean
+  /** Application ID from the Discord Developer Portal. Empty = no presence. */
+  client_id: string
+}
+
 /** Bounds enforced by `crate::config::overlay` — mirrored so the UI can't
  *  offer a value the backend would silently clamp. */
 export const OVERLAY_TOP_N_MIN = 1
@@ -211,6 +218,7 @@ export type AppConfig = {
   autoplay: AutoplayConfig
   overlay: OverlayConfig
   network: NetworkConfig
+  discord: DiscordConfig
 }
 
 // ---------- Built-in bot cloud inference (native API) ----------
