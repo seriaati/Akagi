@@ -2,7 +2,9 @@ import { useTranslation } from 'react-i18next'
 import { TileFrame } from '@/components/TileFrame'
 import { Mahgen } from '@/components/Mahgen'
 import { useGameStore } from '@/stores/gameStore'
+import { useRoundHistoryStore } from '@/stores/roundHistoryStore'
 import { fmtScore, relativeKind, bakazeFor } from '@/lib/format'
+import { playerName } from '@/lib/roundHistory'
 import type { Breakpoint, TileId } from '@/tiles/defaults'
 
 const SEAT_TO_TILE: Record<number, TileId> = {
@@ -23,16 +25,14 @@ export function PlayerTile({ seat, bp }: { seat: number; bp: Breakpoint }) {
   const { t } = useTranslation()
   const game = useGameStore((s) => s.game)
   const view = useGameStore((s) => s.view)
+  const name = useRoundHistoryStore((s) => playerName(s.history.names, seat))
   const numPlayers = game?.num_players ?? 4
   const player = game?.players[seat]
   const playerView = view?.players[seat]
   const ourSeat = game?.our_seat ?? null
   const kind = relativeKind(seat, ourSeat, numPlayers)
-  const isSelf = kind === 'self'
   const id = SEAT_TO_TILE[seat]
-  const title = isSelf
-    ? t('tile.player_n_self', { n: seat + 1 })
-    : t('tile.player_n', { n: seat + 1 })
+  const title = [t('tile.player_n', { n: seat + 1 }), name].filter(Boolean).join(' · ') + ` (${t(KIND_TKEY[kind])})`
 
   // bakaze of this seat (E/S/W rotates from oya in 3p; E/S/W/N in 4p)
   const seatWind = game ? bakazeFor(seat, game.oya, numPlayers) : '—'
@@ -43,11 +43,6 @@ export function PlayerTile({ seat, bp }: { seat: number; bp: Breakpoint }) {
       id={id}
       title={title}
       bp={bp}
-      rightSlot={
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground px-1">
-          {t(KIND_TKEY[kind])}
-        </span>
-      }
       contentClassName="flex flex-col gap-2"
     >
       <div className="flex items-baseline justify-between">

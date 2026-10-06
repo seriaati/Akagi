@@ -38,6 +38,13 @@ export type RoundCursor = {
   maybeResumed: boolean
 }
 
+/** The seat's name from `start_game`, or undefined when the bridge didn't
+ *  capture one (bridges fill missing names with "" or the seat number). */
+export function playerName(names: string[], seat: number): string | undefined {
+  const name = names[seat]
+  return name && name !== String(seat) ? name : undefined
+}
+
 export const EMPTY_HISTORY: RoundHistory = { names: [], rounds: [] }
 export const EMPTY_CURSOR: RoundCursor = { start: null, riichi: [], seenDeltas: [], closed: false, maybeResumed: false }
 

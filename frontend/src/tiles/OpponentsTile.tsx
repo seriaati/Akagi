@@ -2,7 +2,9 @@ import { useTranslation } from 'react-i18next'
 import { TileFrame } from '@/components/TileFrame'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { useGameStore } from '@/stores/gameStore'
-import { pct } from '@/lib/format'
+import { useRoundHistoryStore } from '@/stores/roundHistoryStore'
+import { pct, relativeKind } from '@/lib/format'
+import { playerName } from '@/lib/roundHistory'
 import {
   Table,
   TableBody,
@@ -23,6 +25,12 @@ export function OpponentsTile({ bp }: { bp: Breakpoint }) {
   const opponents = useAnalysisStore((s) => s.result?.opponents ?? NO_OPPONENTS)
   const ourSeat = useGameStore((s) => s.game?.our_seat ?? null)
   const numPlayers = useGameStore((s) => s.game?.num_players ?? 4)
+  const names = useRoundHistoryStore((s) => s.history.names)
+
+  const label = (seat: number) => {
+    const name = playerName(names, seat) ?? t('tile.player_n', { n: seat + 1 })
+    return ourSeat == null ? name : `${name} (${t(`mahjong.${relativeKind(seat, ourSeat, numPlayers)}`)})`
+  }
 
   return (
     <TileFrame id="opponents" title={t('tile.opponents')} bp={bp} contentClassName="p-0">
@@ -32,7 +40,7 @@ export function OpponentsTile({ bp }: { bp: Breakpoint }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-[10px] uppercase">{t('tile.opponents_seat')}</TableHead>
+              <TableHead className="text-[10px] uppercase">{t('tile.opponents_player')}</TableHead>
               <TableHead className="text-[10px] uppercase">{t('tile.opponents_tenpai')}</TableHead>
               <TableHead className="text-[10px] uppercase">{t('tile.opponents_riichi')}</TableHead>
               <TableHead className="text-[10px] uppercase text-right">{t('tile.opponents_max_risk')}</TableHead>
@@ -43,7 +51,7 @@ export function OpponentsTile({ bp }: { bp: Breakpoint }) {
               const maxRisk = o.risk.length ? Math.max(...o.risk) : 0
               return (
                 <TableRow key={o.seat}>
-                  <TableCell className="font-mono">{seatLabel(o.seat, ourSeat, numPlayers)}</TableCell>
+                  <TableCell className="max-w-40 truncate" title={label(o.seat)}>{label(o.seat)}</TableCell>
                   <TableCell className="font-mono">{pct(o.tenpai_rate)}</TableCell>
                   <TableCell>{o.is_riichi ? '●' : '—'}</TableCell>
                   <TableCell className="font-mono text-right">{pct(maxRisk)}</TableCell>
@@ -57,13 +65,3 @@ export function OpponentsTile({ bp }: { bp: Breakpoint }) {
   )
 }
 
-function seatLabel(seat: number, ourSeat: number | null, numPlayers: number): string {
-  if (ourSeat == null) return String(seat)
-  const n = Math.max(1, numPlayers)
-  const d = (seat - ourSeat + n) % n
-  if (n === 3) {
-    // 3p: only kamicha (上) and shimocha (下) — no toimen (対).
-    return d === 0 ? '自' : d === 1 ? '下' : '上'
-  }
-  return d === 1 ? '下' : d === 2 ? '対' : d === 3 ? '上' : '自'
-}

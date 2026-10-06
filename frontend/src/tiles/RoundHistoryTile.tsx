@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import type { RoundResult } from '@/lib/roundHistory'
+import { playerName, type RoundResult } from '@/lib/roundHistory'
 import type { Breakpoint } from '@/tiles/defaults'
 
 export function RoundHistoryTile({ bp }: { bp: Breakpoint }) {
@@ -21,11 +21,7 @@ export function RoundHistoryTile({ bp }: { bp: Breakpoint }) {
   const ourSeat = useGameStore((s) => s.game?.our_seat ?? null)
   const numPlayers = rounds[0]?.startScores.length ?? 0
 
-  // Bridges fill missing names with "" or the seat number — fall back to P1..P4.
-  const label = (seat: number) => {
-    const name = names[seat]
-    return name && name !== String(seat) ? name : `P${seat + 1}`
-  }
+  const label = (seat: number) => playerName(names, seat) ?? `P${seat + 1}`
 
   const resultText = (r: RoundResult) => {
     if (r.outcome === 'ryukyoku') return t('mahjong.ryukyoku')
