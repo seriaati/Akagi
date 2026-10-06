@@ -137,7 +137,8 @@ pub struct AppState {
     /// Live-tail forwarder tasks (`subscribe_log_events` /
     /// `subscribe_inspector`), keyed by the frontend Channel id so
     /// `unsubscribe_stream` can abort them when the Logs view lets go.
-    pub stream_forwarders: Arc<std::sync::Mutex<HashMap<u32, tauri::async_runtime::JoinHandle<()>>>>,
+    pub stream_forwarders:
+        Arc<std::sync::Mutex<HashMap<u32, tauri::async_runtime::JoinHandle<()>>>>,
 }
 
 impl AppState {

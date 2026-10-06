@@ -7,9 +7,8 @@
 //! cannot, because it never reached the upstream. That difference is the
 //! whole proof, so no request counter is needed.
 
-
-use akagi::config::HttpCaptureConfig;
 use crate::common::{get_through_proxy, Harness, BEACON_QUERY, UPSTREAM_BODY};
+use akagi::config::HttpCaptureConfig;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_beacon_is_blocked_while_ordinary_traffic_forwards() {

@@ -1,9 +1,8 @@
 //! `record_all` is the opt-in policy: everything intercepted is recorded,
 //! not just the exchanges a recognizer understood.
 
-
-use akagi::config::HttpCaptureConfig;
 use crate::common::{get_through_proxy, Harness, UPSTREAM_BODY};
+use akagi::config::HttpCaptureConfig;
 
 /// `record_all` keeps the traffic that used to be discarded — and pairs
 /// each response back to its request.

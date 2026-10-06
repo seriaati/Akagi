@@ -1,9 +1,8 @@
 //! Regression: a request hudsucker does not answer through
 //! `handle_response` must not desynchronise the request/response pairing.
 
-
-use akagi::config::HttpCaptureConfig;
 use crate::common::{pipeline_through_proxy, Harness, UPSTREAM_BODY};
+use akagi::config::HttpCaptureConfig;
 
 /// Regression: a request hudsucker does **not** answer through
 /// `handle_response` must not desynchronise the pairing queue.

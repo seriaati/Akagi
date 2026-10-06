@@ -7,7 +7,6 @@
 //! and that a beacon travelling through the proxy comes out the other
 //! side carrying those values. Nothing is stubbed but the origin itself.
 
-
 use std::sync::Arc;
 use std::time::Duration;
 
