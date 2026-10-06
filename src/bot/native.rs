@@ -117,7 +117,7 @@ enum Announce {
 /// only the first decision of an outage pays a request timeout. Reset whenever
 /// the user changes the API settings — that is an explicit "try again now".
 #[derive(Debug)]
-struct Breaker {
+pub(crate) struct Breaker {
     /// Whether the last API request succeeded. Toasts fire only on a change of
     /// this flag, so a persistently-down server doesn't spam a toast per turn.
     healthy: bool,
@@ -127,7 +127,7 @@ struct Breaker {
 }
 
 impl Breaker {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             healthy: true,
             consecutive_failures: 0,
@@ -136,18 +136,18 @@ impl Breaker {
     }
 
     /// Whether an API call may be attempted right now.
-    fn allows(&self) -> bool {
+    pub(crate) fn allows(&self) -> bool {
         self.open_until.is_none_or(|t| Instant::now() >= t)
     }
 
-    fn record_success(&mut self) {
+    pub(crate) fn record_success(&mut self) {
         self.consecutive_failures = 0;
         self.open_until = None;
     }
 
     /// Open the breaker for `BREAKER_BASE * 2^(failures-1)`, capped at
     /// [`BREAKER_MAX`]. Returns the window, for logging.
-    fn record_failure(&mut self) -> Duration {
+    pub(crate) fn record_failure(&mut self) -> Duration {
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);
         let shift = (self.consecutive_failures - 1).min(16);
         let backoff = BREAKER_BASE.saturating_mul(1u32 << shift).min(BREAKER_MAX);

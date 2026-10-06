@@ -33,10 +33,12 @@
 //!   resolves.
 
 use crate::bot::manifest;
+use crate::bot::native::Breaker;
 use crate::bot::registry::BotRegistry;
 use crate::bot::runner::{BotRunner, SubprocessBot};
 use crate::bot::runtime::PythonRuntime;
 use crate::bot::sync_guard::SyncGuard;
+use crate::bot::types::BotResponse;
 use crate::config::AppConfig;
 use crate::event_bus::{BotResponseBus, BotStatusBus, NotifyBus, TrackedEvent};
 use crate::inspector::InspectorWriter;
@@ -49,6 +51,53 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{broadcast, Mutex, RwLock};
 use tracing::{debug, error, info, warn};
+
+/// Notification id shared by the stand-in toasts (fell back / restored), so
+/// each replaces the previous one instead of stacking.
+const STAND_IN_NOTIFY_ID: &str = "bot-stand-in";
+
+/// What is answering in place of the active bot while it is down.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StandIn {
+    /// The built-in native model.
+    Native,
+    /// [`PlaceholderBot`], when the native model failed too.
+    Placeholder,
+}
+
+/// Last-resort stand-in: discards the tile it just drew and passes on
+/// everything else — what Majsoul itself does for a player who times out. It
+/// keeps no state and cannot fail.
+struct PlaceholderBot {
+    actor_id: u8,
+}
+
+impl PlaceholderBot {
+    const NAME: &'static str = "placeholder";
+
+    fn reply(&self, events: &[MjaiEvent]) -> BotResponse {
+        let action = match events.last() {
+            Some(MjaiEvent::Tsumo { actor, pai }) if *actor == self.actor_id => MjaiEvent::Dahai {
+                actor: *actor,
+                pai: pai.clone(),
+                tsumogiri: true,
+            },
+            _ => MjaiEvent::None,
+        };
+        BotResponse { action, meta: None }
+    }
+}
+
+#[async_trait::async_trait]
+impl BotRunner for PlaceholderBot {
+    async fn react(&mut self, events: &[MjaiEvent]) -> Result<BotResponse> {
+        Ok(self.reply(events))
+    }
+
+    async fn reset(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
 
 pub struct BotManager {
     /// Python runtime for `mjai_bot/*` subprocess bots. `None` when no
@@ -78,6 +127,17 @@ pub struct BotManager {
     runner: Option<Box<dyn BotRunner>>,
     /// Events seen since the last `react()` call.
     pending: Vec<MjaiEvent>,
+    /// Every event fed to the runner this game, in order. Replayed into a
+    /// stand-in, or into the restarted active bot, so either picks up the game
+    /// where the failed runner left off (see [`Self::react_or_stand_in`]).
+    /// Cleared with the runner at game boundaries.
+    history: Vec<MjaiEvent>,
+    /// `Some` while the active bot is down mid-game and a stand-in is
+    /// answering in its place. `None` ⇒ `runner` is the active bot.
+    stand_in: Option<StandIn>,
+    /// Backoff for restarting the active bot while a stand-in plays — the
+    /// same schedule the native bot uses to retry a failed cloud API.
+    restart_breaker: Breaker,
     /// Bot's seat in the current game; set on `start_game`.
     actor_id: Option<u8>,
     /// One-shot: drop the next own-seat bridge `reach` echo before it is
@@ -124,6 +184,9 @@ impl BotManager {
             game_num_players: 4,
             runner: None,
             pending: Vec::new(),
+            history: Vec::new(),
+            stand_in: None,
+            restart_breaker: Breaker::new(),
             actor_id: None,
             drop_next_own_reach: false,
             out_tx,
@@ -162,6 +225,8 @@ impl BotManager {
                         // Tear the runner down; next start_game will respawn.
                         self.runner = None;
                         self.pending.clear();
+                        self.history.clear();
+                        self.stand_in = None;
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -229,10 +294,14 @@ impl BotManager {
                 );
                 self.runner = None;
                 self.pending.clear();
+                self.history.clear();
                 self.emit_status(BotStatus::Idle);
                 return Ok(());
             }
             self.active_name = chosen;
+            self.history.clear();
+            self.stand_in = None;
+            self.restart_breaker = Breaker::new();
             self.spawn_runner().await?;
             self.pending.clear();
         }
@@ -267,82 +336,20 @@ impl BotManager {
             return Ok(());
         }
 
-        // Read once, before borrowing the runner: whether autoplay is on
-        // gates the reach follow-up below. Runtime-toggled — the same flag
-        // the autoplay manager re-reads on every response.
+        // Read once, before asking: whether autoplay is on gates the reach
+        // follow-up (see `ask_runner`). Runtime-toggled — the same flag the
+        // autoplay manager re-reads on every response.
         let autoplay_enabled = self.config.read().await.autoplay.enabled;
-        let our_seat = self.actor_id;
 
-        let runner = self
-            .runner
-            .as_mut()
-            .expect("runner is Some — checked above");
         let batch = std::mem::take(&mut self.pending);
         let started = Instant::now();
-        let mut resp = match runner.react(&batch).await {
-            Ok(r) => r,
-            Err(e) => {
-                let err_str = format!("{e:#}");
-                let bot = self.active_name.clone();
-                self.emit_status(BotStatus::Error {
-                    bot: bot.clone(),
-                    error: err_str.clone(),
-                });
-                self.emit_notify(Notification::error("Bot reaction failed").body(err_str));
-                return Err(e).context("bot react failed");
-            }
-        };
+        let (resp, reach_followup) = self.react_or_stand_in(&batch, autoplay_enabled).await;
+        self.history.extend_from_slice(&batch);
         let reaction_ms = started.elapsed().as_millis() as u64;
-
-        // Autoplay reach follow-up (#257). A bot that declares riichi as
-        // plain mjai — `reach` with no `pai` — leaves the declaring discard
-        // unresolved, and Majsoul fuses declaration + discard into one action
-        // so autoplay needs the tile up front. Ask the same runner for it now
-        // by feeding it the reach, exactly as the mjai protocol prescribes
-        // (declare → the engine echoes reach → the bot answers with the
-        // dahai). This is what the built-in native bot already does
-        // internally; here it is generalised to any runner.
-        //
-        // Gated on autoplay because the follow-up mutates a stateful bot's
-        // state as though riichi were declared. Under autoplay we commit that
-        // declaration, so it holds; in analysis mode the human may decline,
-        // and a speculative reach that never happens would desync the bot.
-        // The bridge's later real reach echo for this declaration is dropped
-        // from the runner's view (`drop_next_own_reach`) so it isn't a second
-        // reach.
-        let mut did_reach_followup = false;
-        if autoplay_enabled {
-            if let MjaiEvent::Reach { pai: None, .. } = &resp.action {
-                if let Some(seat) = our_seat {
-                    let reach_ev = MjaiEvent::Reach {
-                        actor: seat,
-                        pai: None,
-                    };
-                    match runner.react(std::slice::from_ref(&reach_ev)).await {
-                        Ok(follow) => match follow.action {
-                            MjaiEvent::Dahai { pai, .. } => {
-                                resp.action = MjaiEvent::Reach {
-                                    actor: seat,
-                                    pai: Some(pai),
-                                };
-                                did_reach_followup = true;
-                            }
-                            other => warn!(
-                                "bot manager: reach follow-up returned {other:?}, not a dahai; \
-                                 leaving the reach unresolved (autoplay will decline it)"
-                            ),
-                        },
-                        Err(e) => warn!(
-                            "bot manager: reach follow-up react failed ({e:#}); \
-                             leaving the reach unresolved"
-                        ),
-                    }
-                }
-            }
-        }
         // The follow-up fed the runner a reach; drop the bridge's later echo
         // of the same declaration so a stateful bot doesn't apply reach twice.
-        if did_reach_followup {
+        if let Some(reach_ev) = reach_followup {
+            self.history.push(reach_ev);
             self.drop_next_own_reach = true;
         }
 
@@ -358,7 +365,7 @@ impl BotManager {
                 self.inspector.record(InspectorEntry::BotReaction {
                     ts_ms: Local::now().timestamp_millis(),
                     reaction: BotReaction {
-                        bot: self.active_name.clone(),
+                        bot: self.answering_bot().to_owned(),
                         actor_id,
                         trigger,
                         action: resp.action.clone(),
@@ -378,10 +385,224 @@ impl BotManager {
             // here so resources release immediately.
             let bot = self.active_name.clone();
             self.runner = None;
+            self.history.clear();
+            self.stand_in = None;
             self.actor_id = None;
             self.emit_status(BotStatus::Stopped { bot });
+        } else if self.stand_in.is_some() && self.restart_breaker.allows() {
+            // Only now, with this turn already answered, so the restart's
+            // spawn + replay never delays a reply.
+            self.try_restore_active().await;
         }
         Ok(())
+    }
+
+    /// Ask the runner about `batch`; if it fails, answer with a stand-in.
+    ///
+    /// A failed react — a crash, a timeout, a malformed reply — leaves the
+    /// runner unusable: a timed-out subprocess may still answer later and
+    /// shift every following reply by one. So it is dropped, and the turn is
+    /// answered by the next stand-in down the chain, caught up on the game so
+    /// far plus `batch` in one call (bots decide only on the last event of a
+    /// batch, so the replay costs a single decision):
+    ///
+    /// 1. the built-in native model, unless that is what just failed;
+    /// 2. [`PlaceholderBot`], which cannot fail.
+    ///
+    /// The stand-in keeps playing until [`Self::try_restore_active`] brings
+    /// the active bot back.
+    ///
+    /// Returns the answer plus the synthetic reach the runner was fed by the
+    /// follow-up, if any (see [`Self::ask_runner`]).
+    async fn react_or_stand_in(
+        &mut self,
+        batch: &[MjaiEvent],
+        autoplay_enabled: bool,
+    ) -> (BotResponse, Option<MjaiEvent>) {
+        let err = match self.ask_runner(batch, autoplay_enabled).await {
+            Ok(answer) => return answer,
+            Err(e) => e,
+        };
+        let failed = self.answering_bot().to_owned();
+        warn!(bot = %failed, "bot react failed ({err:#}); switching to a stand-in");
+        if self.stand_in.is_none() {
+            // The active bot itself failed: start the restart backoff.
+            self.restart_breaker.record_failure();
+        }
+        // Dropping a subprocess runner kills the child (`kill_on_drop`).
+        self.runner = None;
+        let bot = self.active_name.clone();
+
+        if !crate::bot::native::is_native(&failed) {
+            match self.native_stand_in(batch, autoplay_enabled).await {
+                Ok(answer) => {
+                    self.stand_in = Some(StandIn::Native);
+                    self.emit_status(BotStatus::Error {
+                        bot: bot.clone(),
+                        error: format!("{err:#} — the built-in local model is standing in"),
+                    });
+                    self.emit_notify(
+                        Notification::warn(format!("{bot} unavailable"))
+                            .body(format!(
+                                "Falling back to the built-in local model until {bot} is back. ({err:#})"
+                            ))
+                            .id(STAND_IN_NOTIFY_ID),
+                    );
+                    return answer;
+                }
+                Err(e) => warn!("built-in stand-in failed too ({e:#}); using the placeholder"),
+            }
+        }
+
+        let actor_id = self.actor_id.expect("decision points require a seat");
+        let placeholder = PlaceholderBot { actor_id };
+        let resp = placeholder.reply(batch);
+        self.runner = Some(Box::new(placeholder));
+        self.stand_in = Some(StandIn::Placeholder);
+        self.emit_status(BotStatus::Error {
+            bot: bot.clone(),
+            error: format!("{err:#} — no bot available, discarding drawn tiles"),
+        });
+        self.emit_notify(
+            Notification::error(format!("{bot} unavailable"))
+                .body(format!(
+                    "No fallback bot could run, so drawn tiles are discarded and calls \
+                     passed until {bot} is back. ({err:#})"
+                ))
+                .id(STAND_IN_NOTIFY_ID),
+        );
+        (resp, None)
+    }
+
+    /// One full answer from the current runner: react to `events`, then the
+    /// reach follow-up when it is owed. `Err` from either call means the
+    /// runner is unusable.
+    ///
+    /// Autoplay reach follow-up (#257). A bot that declares riichi as plain
+    /// mjai — `reach` with no `pai` — leaves the declaring discard unresolved,
+    /// and Majsoul fuses declaration + discard into one action so autoplay
+    /// needs the tile up front. Ask the same runner for it now by feeding it
+    /// the reach, exactly as the mjai protocol prescribes (declare → the
+    /// engine echoes reach → the bot answers with the dahai). This is what the
+    /// built-in native bot already does internally; here it is generalised to
+    /// any runner.
+    ///
+    /// Gated on autoplay because the follow-up mutates a stateful bot's state
+    /// as though riichi were declared. Under autoplay we commit that
+    /// declaration, so it holds; in analysis mode the human may decline, and
+    /// a speculative reach that never happens would desync the bot. When the
+    /// follow-up resolves the reach, the synthetic reach is returned so the
+    /// caller can record it and drop the bridge's later real echo of the same
+    /// declaration (`drop_next_own_reach`) — it must not be a second reach.
+    async fn ask_runner(
+        &mut self,
+        events: &[MjaiEvent],
+        autoplay_enabled: bool,
+    ) -> Result<(BotResponse, Option<MjaiEvent>)> {
+        let runner = self
+            .runner
+            .as_mut()
+            .expect("runner is Some — checked by caller");
+        let mut resp = runner.react(events).await?;
+        let (MjaiEvent::Reach { pai: None, .. }, true, Some(seat)) =
+            (&resp.action, autoplay_enabled, self.actor_id)
+        else {
+            return Ok((resp, None));
+        };
+        let reach_ev = MjaiEvent::Reach {
+            actor: seat,
+            pai: None,
+        };
+        let follow = runner
+            .react(std::slice::from_ref(&reach_ev))
+            .await
+            .context("reach follow-up")?;
+        match follow.action {
+            MjaiEvent::Dahai { pai, .. } => {
+                resp.action = MjaiEvent::Reach {
+                    actor: seat,
+                    pai: Some(pai),
+                };
+                Ok((resp, Some(reach_ev)))
+            }
+            other => {
+                warn!(
+                    "bot manager: reach follow-up returned {other:?}, not a dahai; \
+                     leaving the reach unresolved (autoplay will decline it)"
+                );
+                Ok((resp, None))
+            }
+        }
+    }
+
+    /// Build the native bot and catch it up on this game, answering `batch`.
+    async fn native_stand_in(
+        &mut self,
+        batch: &[MjaiEvent],
+        autoplay_enabled: bool,
+    ) -> Result<(BotResponse, Option<MjaiEvent>)> {
+        let actor_id = self.actor_id.context("no seat")?;
+        self.runner = Some(
+            crate::bot::native::build(
+                actor_id,
+                self.game_num_players,
+                self.config.clone(),
+                self.notify_tx.clone(),
+            )
+            .await?,
+        );
+        let replay: Vec<MjaiEvent> = self.history.iter().chain(batch).cloned().collect();
+        let answer = self.ask_runner(&replay, autoplay_enabled).await;
+        if answer.is_err() {
+            self.runner = None;
+        }
+        answer
+    }
+
+    /// Try to bring the active bot back while a stand-in is playing: spawn it
+    /// and replay the game so far. On success it takes over from the next
+    /// decision; on failure the stand-in carries on and the backoff grows.
+    async fn try_restore_active(&mut self) {
+        let bot = self.active_name.clone();
+        let stand_in = self.runner.take();
+        let restored = match self.spawn_runner().await {
+            Ok(()) => match self.runner.as_mut() {
+                Some(runner) => runner.react(&self.history).await.map(|_| ()),
+                None => Err(anyhow::anyhow!("bot respawn left no runner")),
+            },
+            Err(e) => Err(e),
+        };
+        match restored {
+            Ok(()) => {
+                info!(bot = %bot, replayed = self.history.len(), "active bot restored");
+                self.stand_in = None;
+                self.restart_breaker.record_success();
+                self.emit_notify(
+                    Notification::success(format!("{bot} restored"))
+                        .body(format!("{bot} is playing again."))
+                        .id(STAND_IN_NOTIFY_ID),
+                );
+            }
+            Err(e) => {
+                let backoff = self.restart_breaker.record_failure();
+                warn!(bot = %bot, "restarting the active bot failed ({e:#}); retrying in {backoff:?}");
+                self.runner = stand_in;
+                self.emit_status(BotStatus::Error {
+                    bot,
+                    error: format!("restart failed: {e:#} — a stand-in is playing"),
+                });
+            }
+        }
+    }
+
+    /// Name of whichever bot is answering right now.
+    fn answering_bot(&self) -> &str {
+        match self.stand_in {
+            None => &self.active_name,
+            Some(StandIn::Native) if self.game_num_players == 3 => crate::bot::native::NATIVE_3P,
+            Some(StandIn::Native) => crate::bot::native::NATIVE_4P,
+            Some(StandIn::Placeholder) => PlaceholderBot::NAME,
+        }
     }
 
     /// Two-phase spawn so the IPC layer can show a "Syncing deps…" spinner
@@ -749,14 +970,6 @@ mod tests {
                 fail_with: Arc::new(Mutex::new(None)),
             };
             (r, calls)
-        }
-
-        fn failing(err: &str) -> Self {
-            Self {
-                calls: Arc::new(Mutex::new(Vec::new())),
-                next: Arc::new(Mutex::new(Vec::new())),
-                fail_with: Arc::new(Mutex::new(Some(err.into()))),
-            }
         }
     }
 
@@ -1227,43 +1440,331 @@ mod tests {
         );
     }
 
+    /// A mock that answers normally until `fail_with` is set, then fails.
+    #[allow(clippy::type_complexity)]
+    fn flaky_mock() -> (
+        MockBotRunner,
+        Arc<Mutex<Vec<Vec<MjaiEvent>>>>,
+        Arc<Mutex<Option<String>>>,
+    ) {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let fail_with = Arc::new(Mutex::new(None));
+        let mock = MockBotRunner {
+            calls: calls.clone(),
+            next: Arc::new(Mutex::new(Vec::new())),
+            fail_with: fail_with.clone(),
+        };
+        (mock, calls, fail_with)
+    }
+
+    fn start_game_seat0() -> MjaiEvent {
+        MjaiEvent::StartGame {
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+            kyoku_first: None,
+            aka_flag: None,
+            id: Some(0),
+            num_players: 4,
+            game_meta: None,
+        }
+    }
+
+    /// Play one go-around with the runner answering (our draw at seat 0, then
+    /// each opponent's draw and discard), then make it fail and draw again.
+    /// The failing draw is the 11th event of the game, start_game included.
+    async fn play_until_runner_fails_on_our_draw(
+        mgr: &mut BotManager,
+        fail_with: &Arc<Mutex<Option<String>>>,
+    ) {
+        let hand: Vec<String> = [
+            "1m", "1m", "3m", "5m", "7m", "9m", "2p", "4p", "6p", "8p", "1s", "3s", "5s",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        mgr.handle(MjaiEvent::StartKyoku {
+            bakaze: "E".into(),
+            dora_marker: "2m".into(),
+            kyoku: 1,
+            honba: 0,
+            kyotaku: 0,
+            oya: 0,
+            scores: vec![25000, 25000, 25000, 25000],
+            tehais: vec![hand.clone(), hand.clone(), hand.clone(), hand],
+            num_players: 4,
+        })
+        .await
+        .unwrap();
+        mgr.handle(MjaiEvent::Tsumo {
+            actor: 0,
+            pai: "5p".into(),
+        })
+        .await
+        .unwrap();
+        mgr.handle(MjaiEvent::Dahai {
+            actor: 0,
+            pai: "1m".into(),
+            tsumogiri: false,
+        })
+        .await
+        .unwrap();
+        for seat in 1..4 {
+            mgr.handle(MjaiEvent::Tsumo {
+                actor: seat,
+                pai: "9p".into(),
+            })
+            .await
+            .unwrap();
+            mgr.handle_tracked(tracked(
+                MjaiEvent::Dahai {
+                    actor: seat,
+                    pai: "9p".into(),
+                    tsumogiri: true,
+                },
+                Some(false),
+            ))
+            .await
+            .unwrap();
+        }
+        *fail_with.lock().await = Some("timed out".into());
+        mgr.handle(MjaiEvent::Tsumo {
+            actor: 0,
+            pai: "7p".into(),
+        })
+        .await
+        .expect("a failed react falls back, it is not surfaced");
+    }
+
+    /// The opponent at seat 1 draws and discards: one more decision for us.
+    async fn next_opponent_discard(mgr: &mut BotManager) {
+        mgr.handle(MjaiEvent::Dahai {
+            actor: 0,
+            pai: "1m".into(),
+            tsumogiri: false,
+        })
+        .await
+        .unwrap();
+        mgr.handle(MjaiEvent::Tsumo {
+            actor: 1,
+            pai: "9s".into(),
+        })
+        .await
+        .unwrap();
+        mgr.handle(MjaiEvent::Dahai {
+            actor: 1,
+            pai: "9s".into(),
+            tsumogiri: true,
+        })
+        .await
+        .unwrap();
+    }
+
+    fn drain_notify_titles(rx: &mut broadcast::Receiver<Notification>) -> Vec<String> {
+        let mut titles = Vec::new();
+        while let Ok(n) = rx.try_recv() {
+            titles.push(n.title);
+        }
+        titles
+    }
+
+    /// Regression (2026-10-06): Mortal timed out once mid-game and the
+    /// manager dropped it until the next `start_game`, so the rest of the
+    /// game ran with no bot. Now the built-in model answers that same turn,
+    /// caught up on the game so far, and keeps playing while the active bot
+    /// is retried on a backoff.
     #[tokio::test]
-    async fn react_failure_emits_error_status_and_notification() {
+    async fn custom_bot_failure_falls_back_to_native_and_retries() {
         let bus = bot_response_bus();
-        let status = bot_status_bus();
         let notify = notify_bus();
-        let mut status_rx = status.subscribe();
+        let mut resp_rx = bus.subscribe();
         let mut notify_rx = notify.subscribe();
         let mut mgr = BotManager::new(
-            Some(dummy_runtime()),
-            empty_bot_dir(),
+            None,
+            empty_bot_dir(), // "mock" can't be respawned, so every restart fails
             cfg_with("mock"),
             bus,
-            status,
+            bot_status_bus(),
             notify,
             dummy_inspector(),
             fresh_syncs(),
         );
-        mgr.actor_id = Some(2);
+        let (mock, calls, fail_with) = flaky_mock();
+        mgr.actor_id = Some(0);
         mgr.active_name = "mock".into();
-        mgr.runner = Some(Box::new(MockBotRunner::failing("kaboom")));
+        mgr.runner = Some(Box::new(mock));
+        mgr.pending.push(start_game_seat0());
 
-        // Trigger a decision point — react() returns error.
-        let err = mgr.handle(dahai(0)).await.unwrap_err();
-        assert!(format!("{err:#}").contains("react failed"));
+        play_until_runner_fails_on_our_draw(&mut mgr, &fail_with).await;
 
-        let s = status_rx.try_recv().unwrap();
-        match s {
-            BotStatus::Error { bot, error } => {
-                assert_eq!(bot, "mock");
-                assert!(error.contains("kaboom"), "got error: {error}");
-            }
-            other => panic!("expected Error, got {other:?}"),
+        let mut last = None;
+        while let Ok(r) = resp_rx.try_recv() {
+            last = Some(r);
         }
+        let resp = last.expect("the failed decision is still answered");
+        assert!(
+            matches!(resp.action, MjaiEvent::Dahai { actor: 0, .. }),
+            "the built-in model discards on our draw, got {:?}",
+            resp.action
+        );
+        assert_eq!(mgr.stand_in, Some(StandIn::Native));
+        assert_eq!(mgr.history.len(), 11, "the whole game so far is kept");
+        assert!(drain_notify_titles(&mut notify_rx).contains(&"mock unavailable".to_string()));
 
-        let n = notify_rx.try_recv().unwrap();
-        assert_eq!(n.level, crate::schema::NotifyLevel::Error);
-        assert!(n.title.contains("Bot reaction failed"));
+        // Inside the backoff window: the built-in model answers, no restart.
+        let asked = calls.lock().await.len();
+        next_opponent_discard(&mut mgr).await;
+        assert!(resp_rx.try_recv().is_ok(), "the stand-in answers");
+        assert_eq!(calls.lock().await.len(), asked, "the dead mock is gone");
+
+        // Window elapsed: a restart is tried after the answer; it fails, and
+        // the built-in model carries on.
+        mgr.restart_breaker = Breaker::new();
+        next_opponent_discard(&mut mgr).await;
+        assert!(resp_rx.try_recv().is_ok(), "the stand-in answers");
+        assert_eq!(mgr.stand_in, Some(StandIn::Native));
+        assert!(mgr.runner.is_some());
+        assert!(
+            !mgr.restart_breaker.allows(),
+            "the failed restart backs off"
+        );
+    }
+
+    /// Nothing to fall back to when the built-in model is what failed: the
+    /// placeholder discards the drawn tile, and once the backoff elapses the
+    /// built-in model is restored and replayed.
+    #[tokio::test]
+    async fn native_failure_falls_back_to_placeholder_then_restores() {
+        let bus = bot_response_bus();
+        let notify = notify_bus();
+        let mut resp_rx = bus.subscribe();
+        let mut notify_rx = notify.subscribe();
+        let mut mgr = BotManager::new(
+            None,
+            empty_bot_dir(),
+            cfg_with(crate::bot::native::NATIVE_4P),
+            bus,
+            bot_status_bus(),
+            notify,
+            dummy_inspector(),
+            fresh_syncs(),
+        );
+        mgr.handle(start_game_seat0()).await.unwrap();
+        let (mock, _, fail_with) = flaky_mock();
+        mgr.runner = Some(Box::new(mock));
+
+        play_until_runner_fails_on_our_draw(&mut mgr, &fail_with).await;
+
+        let mut last = None;
+        while let Ok(r) = resp_rx.try_recv() {
+            last = Some(r);
+        }
+        assert_eq!(
+            last.expect("the failed decision is still answered").action,
+            MjaiEvent::Dahai {
+                actor: 0,
+                pai: "7p".into(),
+                tsumogiri: true,
+            },
+            "the placeholder discards the drawn tile"
+        );
+        assert_eq!(mgr.stand_in, Some(StandIn::Placeholder));
+        assert_eq!(mgr.answering_bot(), PlaceholderBot::NAME);
+
+        mgr.restart_breaker = Breaker::new();
+        next_opponent_discard(&mut mgr).await;
+        assert!(resp_rx.try_recv().is_ok(), "the placeholder answers");
+        assert_eq!(mgr.stand_in, None, "the built-in model is back");
+        assert_eq!(mgr.answering_bot(), crate::bot::native::NATIVE_4P);
+        assert!(drain_notify_titles(&mut notify_rx)
+            .contains(&format!("{} restored", crate::bot::native::NATIVE_4P)));
+    }
+
+    /// Passes on its first decision, declares a bare riichi on its second,
+    /// then dies — a bot that hangs on the autoplay reach follow-up.
+    struct ReachThenDie {
+        calls: usize,
+    }
+
+    #[async_trait]
+    impl BotRunner for ReachThenDie {
+        async fn react(&mut self, _events: &[MjaiEvent]) -> Result<BotResponse> {
+            self.calls += 1;
+            let action = match self.calls {
+                1 => MjaiEvent::None,
+                2 => MjaiEvent::Reach {
+                    actor: 0,
+                    pai: None,
+                },
+                _ => bail!("timed out"),
+            };
+            Ok(BotResponse { action, meta: None })
+        }
+        async fn reset(&mut self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    /// A bot that dies on the reach follow-up is as unusable as one that dies
+    /// on the decision itself: its half-made riichi is discarded and the
+    /// built-in model answers the decision from scratch. Before, the dead bot
+    /// was kept, and a late reply from it could answer the next question.
+    #[tokio::test]
+    async fn reach_followup_failure_falls_back_to_native() {
+        let bus = bot_response_bus();
+        let mut resp_rx = bus.subscribe();
+        let config = cfg_with("mock");
+        config.write().await.autoplay.enabled = true;
+        let mut mgr = BotManager::new(
+            None,
+            empty_bot_dir(),
+            config,
+            bus,
+            bot_status_bus(),
+            notify_bus(),
+            dummy_inspector(),
+            fresh_syncs(),
+        );
+        mgr.actor_id = Some(0);
+        mgr.active_name = "mock".into();
+        mgr.runner = Some(Box::new(ReachThenDie { calls: 0 }));
+        mgr.pending.push(start_game_seat0());
+
+        let unused = Arc::new(Mutex::new(None));
+        play_until_runner_fails_on_our_draw(&mut mgr, &unused).await;
+
+        let mut last = None;
+        while let Ok(r) = resp_rx.try_recv() {
+            last = Some(r);
+        }
+        let resp = last.expect("the decision is still answered");
+        assert!(
+            matches!(resp.action, MjaiEvent::Dahai { actor: 0, .. }),
+            "the built-in model answers afresh, got {:?}",
+            resp.action
+        );
+        assert_eq!(mgr.stand_in, Some(StandIn::Native));
+        assert!(
+            !mgr.drop_next_own_reach,
+            "no reach was resolved, so the bridge's echo must not be dropped"
+        );
+        assert_eq!(mgr.history.len(), 11, "the synthetic reach is not recorded");
+    }
+
+    #[tokio::test]
+    async fn placeholder_discards_own_draw_and_passes_otherwise() {
+        let bot = PlaceholderBot { actor_id: 2 };
+        let own = bot.reply(&[MjaiEvent::Tsumo {
+            actor: 2,
+            pai: "E".into(),
+        }]);
+        assert_eq!(
+            own.action,
+            MjaiEvent::Dahai {
+                actor: 2,
+                pai: "E".into(),
+                tsumogiri: true,
+            }
+        );
+        assert_eq!(bot.reply(&[dahai(0)]).action, MjaiEvent::None);
     }
 
     #[tokio::test]
