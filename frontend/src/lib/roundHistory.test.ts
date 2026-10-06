@@ -87,4 +87,44 @@ describe('applyRoundEvent', () => {
     const next = applyRoundEvent(played, EMPTY_CURSOR, { type: 'start_game', names: ['e', 'f', 'g', 'h'] })[0]
     expect(next).toEqual({ names: ['e', 'f', 'g', 'h'], rounds: [] })
   })
+
+  it('keeps rounds across a mid-game reconnect (same names, resumes past E1)', () => {
+    const h = run([
+      startGame,
+      startKyoku(1, START),
+      { type: 'hora', actor: 0, target: 0, deltas: [6000, -2000, -2000, -2000] },
+      startKyoku(1, [31000, 23000, 23000, 23000], 1),
+      // Reconnect: the bridge re-sends start_game, then replays the current kyoku.
+      startGame,
+      startKyoku(1, [31000, 23000, 23000, 23000], 1),
+      { type: 'hora', actor: 1, target: 2, deltas: [0, 3900, -3900, 0] },
+    ])
+    expect(h.rounds.map((r) => r.honba)).toEqual([0, 1])
+  })
+
+  it('drops a replayed kyoku that was already recorded', () => {
+    const h = run([
+      startGame,
+      startKyoku(1, START),
+      { type: 'hora', actor: 2, target: 0, deltas: [-8000, 0, 8000, 0] },
+      startKyoku(2, [17000, 25000, 33000, 25000]),
+      { type: 'ryukyoku', deltas: [1500, -1500, 1500, -1500] },
+      startGame,
+      startKyoku(2, [17000, 25000, 33000, 25000]),
+      { type: 'ryukyoku', deltas: [1500, -1500, 1500, -1500] },
+    ])
+    expect(h.rounds.map((r) => r.kyoku)).toEqual([1, 2])
+  })
+
+  it('resets when a same-names game starts at E1 0 honba', () => {
+    const h = run([
+      startGame,
+      startKyoku(1, START),
+      { type: 'hora', actor: 0, target: 0, deltas: [6000, -2000, -2000, -2000] },
+      { type: 'end_game' },
+      startGame,
+      startKyoku(1, START),
+    ])
+    expect(h.rounds).toEqual([])
+  })
 })

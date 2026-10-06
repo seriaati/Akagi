@@ -14,8 +14,9 @@ type RoundHistoryStore = {
   push: (e: MjaiEvent) => void
 }
 
-/** Per-kyoku results of the live game, rebuilt from `mjai-event`s. Reset on
- *  `start_game`; kept after `end_game` so the last game stays readable. */
+/** Per-kyoku results of the live game, rebuilt from `mjai-event`s. Reset on a
+ *  new game's `start_game` (not a reconnect's); kept after `end_game` so the
+ *  last game stays readable. */
 export const useRoundHistoryStore = create<RoundHistoryStore>((set) => ({
   history: EMPTY_HISTORY,
   cursor: EMPTY_CURSOR,

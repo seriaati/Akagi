@@ -32,12 +32,16 @@ export type RoundCursor = {
   seenDeltas: number[][]
   /** True once this kyoku's result row has been appended. */
   closed: boolean
+  /** A `start_game` with the same names arrived while rounds were recorded:
+   *  either a reconnect (bridges re-send `start_game`) or a rematch. The next
+   *  `start_kyoku` decides — a new game always opens at E1 0 honba. */
+  maybeResumed: boolean
 }
 
 export const EMPTY_HISTORY: RoundHistory = { names: [], rounds: [] }
-export const EMPTY_CURSOR: RoundCursor = { start: null, riichi: [], seenDeltas: [], closed: false }
+export const EMPTY_CURSOR: RoundCursor = { start: null, riichi: [], seenDeltas: [], closed: false, maybeResumed: false }
 
-const sameDeltas = (a: number[], b: number[]) =>
+const sameItems = <T>(a: T[], b: T[]) =>
   a.length === b.length && a.every((v, i) => v === b[i])
 
 /** Fold one live mjai event into the round history. Returns the inputs
@@ -49,18 +53,30 @@ export function applyRoundEvent(
 ): [RoundHistory, RoundCursor] {
   switch (e.type) {
     case 'start_game':
+      if (history.rounds.length > 0 && sameItems(history.names, e.names)) {
+        return [history, { ...EMPTY_CURSOR, maybeResumed: true }]
+      }
       return [{ names: e.names, rounds: [] }, EMPTY_CURSOR]
 
-    case 'start_kyoku':
+    case 'start_kyoku': {
+      let rounds = history.rounds
+      if (cursor.maybeResumed) {
+        rounds = e.bakaze === 'E' && e.kyoku === 1 && e.honba === 0
+          ? []
+          // A reconnect replays the current kyoku; drop it if it was already recorded.
+          : rounds.filter((r) => !(r.bakaze === e.bakaze && r.kyoku === e.kyoku && r.honba === e.honba))
+      }
       return [
-        history,
+        rounds === history.rounds ? history : { ...history, rounds },
         {
           start: { bakaze: e.bakaze, kyoku: e.kyoku, honba: e.honba, oya: e.oya, startScores: e.scores },
           riichi: [],
           seenDeltas: [],
           closed: false,
+          maybeResumed: false,
         },
       ]
+    }
 
     case 'reach_accepted':
       if (!cursor.start) return [history, cursor]
@@ -71,7 +87,7 @@ export function applyRoundEvent(
       const start = cursor.start
       if (!start) return [history, cursor]
       const deltas = e.deltas ?? []
-      const isRepeat = cursor.seenDeltas.some((d) => sameDeltas(d, deltas))
+      const isRepeat = cursor.seenDeltas.some((d) => sameItems(d, deltas))
       const seenDeltas = isRepeat ? cursor.seenDeltas : [...cursor.seenDeltas, deltas]
       const win = e.type === 'hora' ? [{ actor: e.actor, target: e.target }] : []
 
