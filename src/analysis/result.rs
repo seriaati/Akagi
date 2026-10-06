@@ -10,6 +10,17 @@ use serde::Serialize;
 use super::tile::Tile34;
 use super::waits::Waits;
 
+/// Ron value of one wait from the score calculator (ura-dora not counted).
+#[derive(Debug, Clone, Serialize)]
+pub struct WaitScore {
+    /// Ron points without riichi. `None` when the hand has no yaku at dama.
+    pub dama_point: Option<u32>,
+    /// Ron points under riichi. `None` for open hands.
+    pub riichi_point: Option<u32>,
+    /// Yaku at dama (riichi adds 立直 on top). Dora markers excluded.
+    pub yaku_ids: Vec<u32>,
+}
+
 /// One wait entry: tile + remaining count + agari rate.
 #[derive(Debug, Clone, Serialize)]
 pub struct WaitInfo {
@@ -17,6 +28,8 @@ pub struct WaitInfo {
     pub left: u8,
     /// Per-wait agari rate (percent). `None` until Phase 2 populates it.
     pub agari_rate: Option<f64>,
+    /// Per-wait ron value. Only filled for tenpai waits.
+    pub score: Option<WaitScore>,
 }
 
 impl WaitInfo {
@@ -29,14 +42,16 @@ impl WaitInfo {
                 tile: Tile34(idx).to_mjai().to_string(),
                 left,
                 agari_rate: None,
+                score: None,
             })
             .collect()
     }
 
-    /// Build wait infos pulling the per-tile agari rate from a side map.
+    /// Build wait infos pulling the per-tile agari rate and score from side maps.
     pub fn from_waits_with_rates(
         waits: &Waits,
         rates: &std::collections::BTreeMap<u8, f64>,
+        scores: &std::collections::BTreeMap<u8, WaitScore>,
     ) -> Vec<WaitInfo> {
         waits
             .map
@@ -45,6 +60,7 @@ impl WaitInfo {
                 tile: Tile34(idx).to_mjai().to_string(),
                 left,
                 agari_rate: rates.get(&idx).copied(),
+                score: scores.get(&idx).cloned(),
             })
             .collect()
     }

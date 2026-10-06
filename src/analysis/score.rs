@@ -8,12 +8,19 @@
 //! Ura-dora is ignored (no information at decision time). Yakuhai-only
 //! correctness depends on round/seat winds being passed through.
 
+use std::collections::BTreeMap;
+
 use riichienv_core::hand_evaluator::HandEvaluator;
 use riichienv_core::types::{Conditions, Meld as RiMeld, MeldType as RiMeldType, Wind};
+use riichienv_core::yaku::{ID_AKADORA, ID_DORA, ID_NUKIDORA, ID_URADORA};
 
 use super::hand::{Meld34, Meld34Kind, PlayerInfo34};
+use super::result::WaitScore;
 use super::tile::{Tile34, HONOR_BASE};
 use super::waits::Waits;
+
+/// Han from dora markers — counted in the points, not shown as yaku.
+const DORA_IDS: [u32; 4] = [ID_DORA, ID_AKADORA, ID_URADORA, ID_NUKIDORA];
 
 /// Per-wait point breakdown returned by [`expectation`].
 #[derive(Debug, Clone, Default)]
@@ -26,6 +33,8 @@ pub struct ScoreEstimate {
     pub yaku_ids: Vec<u32>,
     /// Whether at least one wait produces a valid (≥1 han) winning hand.
     pub has_yaku: bool,
+    /// Per-wait breakdown keyed by Tile34 index.
+    pub per_wait: BTreeMap<u8, WaitScore>,
 }
 
 fn wind_from_tile(tile: Tile34) -> Wind {
@@ -143,6 +152,7 @@ pub fn expectation(info: &PlayerInfo34, waits: &Waits, allow_riichi: bool) -> Sc
     let mut total_w = 0u32;
     let mut yaku_set: std::collections::BTreeSet<u32> = Default::default();
     let mut has_yaku = false;
+    let mut per_wait: BTreeMap<u8, WaitScore> = BTreeMap::new();
 
     for (tile, left) in waits.iter() {
         if left == 0 {
@@ -170,6 +180,7 @@ pub fn expectation(info: &PlayerInfo34, waits: &Waits, allow_riichi: bool) -> Sc
         };
 
         let mut riichi_pt = 0.0f64;
+        let mut riichi_win = None;
         if !is_open && allow_riichi {
             let cond_riichi = Conditions {
                 round_wind,
@@ -186,12 +197,31 @@ pub fn expectation(info: &PlayerInfo34, waits: &Waits, allow_riichi: bool) -> Sc
             );
             if res_riichi.is_win {
                 riichi_pt = res_riichi.ron_agari as f64;
+                riichi_win = Some(res_riichi.ron_agari);
                 for y in &res_riichi.yaku {
                     yaku_set.insert(*y);
                 }
                 has_yaku = true;
             }
         }
+
+        per_wait.insert(
+            tile,
+            WaitScore {
+                dama_point: res_dama.is_win.then_some(res_dama.ron_agari),
+                riichi_point: riichi_win,
+                yaku_ids: if res_dama.is_win {
+                    res_dama
+                        .yaku
+                        .iter()
+                        .copied()
+                        .filter(|y| !DORA_IDS.contains(y))
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+            },
+        );
 
         if res_dama.is_win {
             for y in &res_dama.yaku {
@@ -215,6 +245,7 @@ pub fn expectation(info: &PlayerInfo34, waits: &Waits, allow_riichi: bool) -> Sc
         riichi_point: sum_riichi / total_w as f64,
         yaku_ids: yaku_set.into_iter().collect(),
         has_yaku,
+        per_wait,
     }
 }
 
@@ -224,6 +255,7 @@ mod tests {
     use crate::analysis::hand::PlayerInfo34Builder;
     use crate::analysis::tile::Tile34;
     use crate::analysis::waits::Waits;
+    use riichienv_core::yaku::ID_SANSHOKU;
 
     #[test]
     fn riichi_strictly_increases_over_dama_for_closed_hand() {
@@ -246,6 +278,45 @@ mod tests {
             est.riichi_point,
             est.dama_point
         );
+    }
+
+    #[test]
+    fn per_wait_scores_split_by_wait() {
+        // 234m 234s 34p 567p 88s: 2p completes sanshoku, 5p does not.
+        let info = PlayerInfo34Builder::new()
+            .add_many(&[
+                "2m", "3m", "4m", "2s", "3s", "4s", "3p", "4p", "5p", "6p", "7p", "8s", "8s",
+            ])
+            .build();
+        let p2 = Tile34::from_mjai("2p").unwrap().idx();
+        let p5 = Tile34::from_mjai("5p").unwrap().idx();
+        let mut waits = Waits::new();
+        waits.insert(p2, 4);
+        waits.insert(p5, 4);
+        let est = expectation(&info, &waits, true);
+        let (s2, s5) = (&est.per_wait[&p2], &est.per_wait[&p5]);
+        assert!(s2.yaku_ids.contains(&ID_SANSHOKU));
+        assert!(!s5.yaku_ids.contains(&ID_SANSHOKU));
+        assert!(s2.dama_point.unwrap() > s5.dama_point.unwrap());
+        assert!(s5.riichi_point.unwrap() > s5.dama_point.unwrap());
+    }
+
+    #[test]
+    fn yakuless_dama_has_no_dama_point() {
+        // 11m 345m 234p 68p 234s: kanchan on a non-yakuhai pair — no yaku at dama.
+        let info = PlayerInfo34Builder::new()
+            .add_many(&[
+                "1m", "1m", "3m", "4m", "5m", "2p", "3p", "4p", "6p", "8p", "2s", "3s", "4s",
+            ])
+            .build();
+        let p7 = Tile34::from_mjai("7p").unwrap().idx();
+        let mut waits = Waits::new();
+        waits.insert(p7, 4);
+        let est = expectation(&info, &waits, true);
+        let s = &est.per_wait[&p7];
+        assert_eq!(s.dama_point, None);
+        assert!(s.yaku_ids.is_empty());
+        assert!(s.riichi_point.is_some());
     }
 
     #[test]

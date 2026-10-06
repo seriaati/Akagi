@@ -248,6 +248,7 @@ pub fn analyze_13(info: &PlayerInfo34) -> Hand13Result {
     let mut dama_point = 0.0;
     let mut riichi_point = 0.0;
     let mut yaku_ids: Vec<u32> = Vec::new();
+    let mut wait_scores = BTreeMap::new();
     if cur_shanten == 0 && !current_waits.is_empty() {
         // Compute dora set from indicators.
         let dora: Vec<_> = info.dora_indicators.iter().map(|d| d.dora_next()).collect();
@@ -259,6 +260,7 @@ pub fn analyze_13(info: &PlayerInfo34) -> Hand13Result {
         dama_point = est.dama_point;
         riichi_point = est.riichi_point;
         yaku_ids = est.yaku_ids;
+        wait_scores = est.per_wait;
         if !est.has_yaku && is_open {
             // Open & yakuless: cannot win → zero out point expectation.
             avg_agari_rate = 0.0;
@@ -300,7 +302,7 @@ pub fn analyze_13(info: &PlayerInfo34) -> Hand13Result {
         0.0
     };
 
-    let waits = WaitInfo::from_waits_with_rates(&current_waits, &tile_rates);
+    let waits = WaitInfo::from_waits_with_rates(&current_waits, &tile_rates, &wait_scores);
     Hand13Result {
         shanten: cur_shanten,
         waits,
