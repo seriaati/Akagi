@@ -131,31 +131,51 @@ pub async fn evaluate_canvas_rect(page: &Page) -> Result<CanvasRect> {
     Ok(rect)
 }
 
-/// Capture a region of the page (CSS pixels) and decode it to RGB pixels.
+/// One screenshot of the whole viewport, decoded to RGB.
+pub struct Frame {
+    width: usize,
+    height: usize,
+    /// Image pixels per CSS pixel.
+    scale: f64,
+    pixels: Vec<[u8; 3]>,
+}
+
+impl Frame {
+    /// The pixels of a region given in CSS pixels, row by row, clamped to
+    /// the image.
+    pub fn region(&self, x: f64, y: f64, width: f64, height: f64) -> Vec<Vec<[u8; 3]>> {
+        let px = |v: f64, max: usize| ((v * self.scale).round().max(0.0) as usize).min(max);
+        let (left, right) = (px(x, self.width), px(x + width, self.width));
+        let (top, bottom) = (px(y, self.height), px(y + height, self.height));
+        (top..bottom)
+            .map(|row| self.pixels[row * self.width + left..row * self.width + right].to_vec())
+            .collect()
+    }
+}
+
+/// Capture the whole viewport.
+///
+/// Never with a `clip`: Chrome serves a clipped capture by briefly
+/// emulating a viewport the size of the clip, offset to it, so a visible
+/// window flashes that region at its top-left on every capture. A
+/// full-viewport capture needs no emulation and leaves the window alone.
 ///
 /// The raw `Page.captureScreenshot` command rather than `Page::screenshot`:
 /// the wrapper activates the tab first, which would pull the game to the
 /// front on every poll.
-pub async fn capture_rgb(
-    page: &Page,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-) -> Result<Vec<[u8; 3]>> {
+pub async fn capture_viewport(page: &Page) -> Result<Frame> {
     use base64::Engine as _;
     use chromiumoxide::cdp::browser_protocol::page::{
-        CaptureScreenshotFormat, CaptureScreenshotParams, Viewport,
+        CaptureScreenshotFormat, CaptureScreenshotParams, GetLayoutMetricsParams,
     };
+    let metrics = page
+        .execute(GetLayoutMetricsParams::default())
+        .await
+        .context("CDP getLayoutMetrics")?;
+    let css_width = metrics.result.css_visual_viewport.client_width;
     let params = CaptureScreenshotParams::builder()
         .format(CaptureScreenshotFormat::Png)
-        .clip(Viewport {
-            x,
-            y,
-            width,
-            height,
-            scale: 1.0,
-        })
+        .optimize_for_speed(true)
         .build();
     let shot = page
         .execute(params)
@@ -179,10 +199,18 @@ pub async fn capture_rgb(
             info.color_type
         ));
     }
-    Ok(buf[..info.buffer_size()]
-        .chunks_exact(channels)
-        .map(|p| [p[0], p[1], p[2]])
-        .collect())
+    if css_width <= 0.0 {
+        return Err(anyhow!("screenshot: viewport has no width"));
+    }
+    Ok(Frame {
+        width: info.width as usize,
+        height: info.height as usize,
+        scale: f64::from(info.width) / css_width,
+        pixels: buf[..info.buffer_size()]
+            .chunks_exact(channels)
+            .map(|p| [p[0], p[1], p[2]])
+            .collect(),
+    })
 }
 
 // ============================================================================

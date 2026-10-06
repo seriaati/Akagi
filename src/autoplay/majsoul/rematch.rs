@@ -37,7 +37,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::autoplay::cdp_input::{capture_rgb, dispatch_click, evaluate_canvas_rect};
+use crate::autoplay::cdp_input::{capture_viewport, dispatch_click, evaluate_canvas_rect, Frame};
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
 use crate::config::{AppConfig, Platform};
 use crate::event_bus::MjaiBus;
@@ -256,24 +256,34 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
     }
 }
 
+/// One capture per read, every area sampled from it.
 async fn read_screen(page: &Page) -> anyhow::Result<(Screen, CanvasRect)> {
     let rect = evaluate_canvas_rect(page).await?;
-    let confirm = sample(page, &rect, &CONFIRM).await?;
-    let play_again = sample(page, &rect, &PLAY_AGAIN).await?;
-    let prompt_confirm = sample(page, &rect, &PROMPT_CONFIRM).await?;
-    let prompt_cancel = sample(page, &rect, &PROMPT_CANCEL).await?;
+    let frame = capture_viewport(page).await?;
+    let sample = |button: &Button| {
+        let pixels: Vec<_> = region(&frame, &rect, button.sample).concat();
+        coverage(&pixels, button.colour)
+    };
     Ok((
-        classify(confirm, play_again, prompt_confirm, prompt_cancel),
+        classify(
+            sample(&CONFIRM),
+            sample(&PLAY_AGAIN),
+            sample(&PROMPT_CONFIRM),
+            sample(&PROMPT_CANCEL),
+        ),
         rect,
     ))
 }
 
-async fn sample(page: &Page, rect: &CanvasRect, button: &Button) -> anyhow::Result<f64> {
-    let (x0, y0, x1, y1) = button.sample;
+/// A 16:9-normalised area of the canvas, row by row.
+fn region(
+    frame: &Frame,
+    rect: &CanvasRect,
+    (x0, y0, x1, y1): (f64, f64, f64, f64),
+) -> Vec<Vec<[u8; 3]>> {
     let (left, top) = rect.pixel(x0, y0);
     let (right, bottom) = rect.pixel(x1, y1);
-    let pixels = capture_rgb(page, left, top, right - left, bottom - top).await?;
-    Ok(coverage(&pixels, button.colour))
+    frame.region(left, top, right - left, bottom - top)
 }
 
 #[cfg(test)]
