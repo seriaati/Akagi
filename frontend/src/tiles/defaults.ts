@@ -19,6 +19,7 @@ export type TileId =
   | 'proxy-control'
   | 'round-history'
   | 'tenpai-draws'
+  | 'tenpai-value'
 
 export type Breakpoint = 'lg' | 'md' | 'sm' | 'xs'
 
@@ -45,6 +46,7 @@ export const ALL_TILES: TileId[] = [
   'proxy-control',
   'round-history',
   'tenpai-draws',
+  'tenpai-value',
 ]
 
 export const DEFAULT_HIDDEN: TileId[] = ['recommendations']
@@ -71,6 +73,7 @@ const LG_LAYOUT: LayoutItem[] = [
   { i: 'board',           x: 0, y: 25, w: 6,  h: 14, minW: 4, minH: 8 },
   { i: 'round-history',   x: 6, y: 25, w: 6,  h: 8, minW: 3, minH: 3 },
   { i: 'tenpai-draws',    x: 6, y: 33, w: 3,  h: 6, minW: 2, minH: 4 },
+  { i: 'tenpai-value',    x: 9, y: 33, w: 3,  h: 6, minW: 2, minH: 4 },
 ]
 
 const MD_LAYOUT: LayoutItem[] = [
@@ -92,6 +95,7 @@ const MD_LAYOUT: LayoutItem[] = [
   { i: 'board',           x: 0, y: 30, w: 6,  h: 14, minW: 4, minH: 8 },
   { i: 'round-history',   x: 6, y: 30, w: 4,  h: 8, minW: 3, minH: 3 },
   { i: 'tenpai-draws',    x: 6, y: 38, w: 4,  h: 6, minW: 2, minH: 4 },
+  { i: 'tenpai-value',    x: 6, y: 44, w: 4,  h: 6, minW: 2, minH: 4 },
 ]
 
 const SM_LAYOUT: LayoutItem[] = [
@@ -113,6 +117,7 @@ const SM_LAYOUT: LayoutItem[] = [
   { i: 'board',           x: 0, y: 51, w: 6, h: 16, minW: 4, minH: 8 },
   { i: 'round-history',   x: 0, y: 67, w: 6, h: 8, minW: 3, minH: 3 },
   { i: 'tenpai-draws',    x: 0, y: 75, w: 3, h: 6, minW: 2, minH: 4 },
+  { i: 'tenpai-value',    x: 3, y: 75, w: 3, h: 6, minW: 2, minH: 4 },
 ]
 
 const XS_LAYOUT: LayoutItem[] = ALL_TILES.map((id, i) => ({
@@ -157,6 +162,7 @@ const LG_LAYOUT_3P: LayoutItem[] = [
   { i: 'board',           x: 0, y: 33, w: 6,  h: 14, minW: 4, minH: 8 },
   { i: 'round-history',   x: 6, y: 33, w: 6,  h: 8, minW: 3, minH: 3 },
   { i: 'tenpai-draws',    x: 6, y: 41, w: 3,  h: 6, minW: 2, minH: 4 },
+  { i: 'tenpai-value',    x: 9, y: 41, w: 3,  h: 6, minW: 2, minH: 4 },
 ]
 
 const MD_LAYOUT_3P: LayoutItem[] = [
@@ -177,6 +183,7 @@ const MD_LAYOUT_3P: LayoutItem[] = [
   { i: 'board',           x: 0, y: 33, w: 6,  h: 14, minW: 4, minH: 8 },
   { i: 'round-history',   x: 6, y: 33, w: 4,  h: 8, minW: 3, minH: 3 },
   { i: 'tenpai-draws',    x: 6, y: 41, w: 4,  h: 6, minW: 2, minH: 4 },
+  { i: 'tenpai-value',    x: 6, y: 47, w: 4,  h: 6, minW: 2, minH: 4 },
 ]
 
 const SM_LAYOUT_3P: LayoutItem[] = [
@@ -197,6 +204,7 @@ const SM_LAYOUT_3P: LayoutItem[] = [
   { i: 'board',           x: 0, y: 51, w: 6, h: 16, minW: 4, minH: 8 },
   { i: 'round-history',   x: 0, y: 67, w: 6, h: 8, minW: 3, minH: 3 },
   { i: 'tenpai-draws',    x: 0, y: 75, w: 3, h: 6, minW: 2, minH: 4 },
+  { i: 'tenpai-value',    x: 3, y: 75, w: 3, h: 6, minW: 2, minH: 4 },
 ]
 
 const ALL_TILES_3P: TileId[] = ALL_TILES.filter((id) => id !== 'player-3')
@@ -240,4 +248,5 @@ export const TILE_TITLES: Record<TileId, string> = {
   'proxy-control':   'Proxy',
   'round-history':   'Round History',
   'tenpai-draws':    'Draws to Tenpai',
+  'tenpai-value':    'Hand Value',
 }

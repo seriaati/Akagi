@@ -423,7 +423,17 @@ export type Snapshot = {
   log_dir: string
 }
 
-export type WaitInfo = { tile: string; left: number; agari_rate: number | null }
+/** Ron value of one tenpai wait (ura-dora not counted). */
+export type WaitScore = {
+  /** null: no yaku at dama. */
+  dama_point: number | null
+  /** null: open hand. */
+  riichi_point: number | null
+  /** Yaku at dama (riichienv ids), dora excluded. */
+  yaku_ids: number[]
+}
+
+export type WaitInfo = { tile: string; left: number; agari_rate: number | null; score: WaitScore | null }
 
 export type ImproveEntry = { draw: string; widened_waits: WaitInfo[]; widened_total: number }
 

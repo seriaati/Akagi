@@ -344,6 +344,14 @@ type WaitInfo = {
   tile: string;       // mjai (e.g. "5p")
   left: number;       // remaining count in pool
   agari_rate: number | null; // %
+  score: WaitScore | null;   // tenpai waits only
+};
+
+// Ron value of one wait. Ura-dora not counted.
+type WaitScore = {
+  dama_point: number | null;   // null: no yaku at dama
+  riichi_point: number | null; // null: open hand
+  yaku_ids: number[];          // dama yaku (riichienv ids), dora excluded
 };
 
 type ImproveEntry = {
