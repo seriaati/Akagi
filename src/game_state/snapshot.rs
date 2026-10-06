@@ -150,6 +150,9 @@ pub struct GameStateSnapshot {
     /// One entry per seat. Length matches `num_players`.
     pub players: Vec<PlayerSnapshot>,
     pub dora_markers: Vec<String>,
+    /// Tiles left in the live wall (excludes the dead wall).
+    #[serde(default)]
+    pub tiles_left: u8,
     /// The seat the active observer (our bot) plays as. Captured from the
     /// `start_game.id` field. `None` if the bridge didn't tag a perspective.
     pub our_seat: Option<u8>,
@@ -227,6 +230,7 @@ impl GameStateSnapshot {
                 .copied()
                 .map(tid_to_mjai)
                 .collect(),
+            tiles_left: s.wall.drawable_count,
             our_seat,
         }
     }
@@ -292,6 +296,7 @@ impl GameStateSnapshot {
                 .copied()
                 .map(tid_to_mjai)
                 .collect(),
+            tiles_left: s.wall.drawable_count,
             our_seat,
         }
     }

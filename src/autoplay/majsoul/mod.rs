@@ -808,6 +808,7 @@ mod tests {
             num_players: 4,
             players,
             dora_markers: Vec::new(),
+            tiles_left: 0,
             our_seat: Some(seat),
         }
     }
@@ -1580,6 +1581,7 @@ mod tests {
             num_players: 3,
             players,
             dora_markers: Vec::new(),
+            tiles_left: 0,
             our_seat: Some(seat),
         }
     }

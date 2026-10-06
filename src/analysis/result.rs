@@ -154,6 +154,9 @@ pub struct AnalysisResult {
     pub best_attack_discard: Option<String>,
     /// Lowest-risk discard from the active player's hand.
     pub best_defence_discard: Option<String>,
+    /// Own draws until tenpai. `None` when already tenpai or the wall count
+    /// is unknown.
+    pub tenpai_draws: Option<super::tenpai_draws::TenpaiDraws>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

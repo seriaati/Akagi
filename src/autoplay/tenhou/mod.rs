@@ -921,6 +921,7 @@ mod tests {
             phase: crate::game_state::snapshot::Phase::WaitAct,
             is_done: false,
             dora_markers: Vec::new(),
+            tiles_left: 0,
             our_seat: Some(0),
         }
     }
@@ -956,6 +957,7 @@ mod tests {
             phase: crate::game_state::snapshot::Phase::WaitAct,
             is_done: false,
             dora_markers: Vec::new(),
+            tiles_left: 0,
             our_seat: Some(0),
         };
         let ctx = ActionContext {

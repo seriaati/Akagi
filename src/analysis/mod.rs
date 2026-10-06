@@ -22,6 +22,7 @@ pub mod score;
 pub mod search;
 pub mod shanten;
 pub mod snapshot_adapter;
+pub mod tenpai_draws;
 pub mod tenpai_rate;
 pub mod tile;
 pub mod waits;
@@ -76,6 +77,16 @@ pub fn analyze(info: &PlayerInfo34) -> AnalysisResult {
     let best_defence_idx = risk::best_defence(&info.hand, &mixed);
     let best_defence = best_defence_idx.map(|i| Tile34(i).to_mjai().to_string());
 
+    // Draws-to-tenpai for the current 13-tile hand, or after the best discard.
+    let hand_after = hand13
+        .as_ref()
+        .or_else(|| hand14.as_ref()?.maintain.first().map(|c| &c.result));
+    let unseen: u32 = info.compute_left_tiles().iter().map(|&c| c as u32).sum();
+    let tenpai_draws = match (hand_after, info.draws_left) {
+        (Some(h), Some(left)) => tenpai_draws::estimate(h, unseen, left),
+        _ => None,
+    };
+
     AnalysisResult {
         seat: info.seat,
         turn: info.turn,
@@ -87,5 +98,6 @@ pub fn analyze(info: &PlayerInfo34) -> AnalysisResult {
         mixed_risk: mixed.to_vec(),
         best_attack_discard: best_attack,
         best_defence_discard: best_defence,
+        tenpai_draws,
     }
 }

@@ -137,6 +137,8 @@ pub struct PlayerInfo34 {
     /// Own discards in order (used when this struct represents the post-tsumo
     /// state — the engine inspects the count to derive the turn).
     pub own_discards: Vec<Tile34>,
+    /// Own draws left before the live wall runs out. `None` when unknown.
+    pub draws_left: Option<u8>,
 }
 
 impl PlayerInfo34 {
@@ -225,6 +227,7 @@ impl Default for PlayerInfo34 {
             opponents: Vec::new(),
             left_tiles: None,
             own_discards: Vec::new(),
+            draws_left: None,
         }
     }
 }

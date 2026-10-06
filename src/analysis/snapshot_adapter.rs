@@ -172,7 +172,28 @@ pub fn to_player_info(snap: &GameStateSnapshot, seat: u8) -> Result<PlayerInfo34
         opponents,
         left_tiles: None,
         own_discards,
+        draws_left: Some(own_draws_left(
+            snap.tiles_left,
+            snap.current_player,
+            seat,
+            snap.num_players,
+        )),
     })
+}
+
+/// Own draws left from `tiles_left` live-wall tiles, assuming no calls skip
+/// turns. `current` has already drawn, so the next draw goes to `current + 1`.
+fn own_draws_left(tiles_left: u8, current: u8, seat: u8, num_players: u8) -> u8 {
+    let np = num_players.max(1);
+    let pos = match (seat + np - current % np) % np {
+        0 => np,
+        d => d,
+    };
+    if tiles_left < pos {
+        0
+    } else {
+        (tiles_left - pos) / np + 1
+    }
 }
 
 fn melds_aka(melds: &[Meld34]) -> u8 {
@@ -216,8 +237,21 @@ mod tests {
                 make_player(3, vec!["1m".into(); 13]),
             ],
             dora_markers: vec!["2m".into()],
+            tiles_left: 0,
             our_seat: Some(0),
         }
+    }
+
+    #[test]
+    fn own_draws_left_follows_draw_order() {
+        // We just drew: our next draw is 4 tiles away.
+        assert_eq!(own_draws_left(70, 0, 0, 4), 17);
+        // Kamicha just drew/discarded: we draw next.
+        assert_eq!(own_draws_left(70, 3, 0, 4), 18);
+        assert_eq!(own_draws_left(1, 3, 0, 4), 1);
+        assert_eq!(own_draws_left(1, 0, 0, 4), 0);
+        // 3p: 55 live tiles, shimocha draws next.
+        assert_eq!(own_draws_left(55, 0, 0, 3), 18);
     }
 
     #[test]

@@ -41,6 +41,7 @@ shanten / parser API, only those modules need to follow.
 | `search.rs` | 14-tile discard search (`analyze_14`) |
 | `result.rs` | Serializable result types |
 | `tenpai_rate.rs` | Open-hand tenpai-rate estimate |
+| `tenpai_draws.rs` | Own draws-to-tenpai estimate (median / 80% / by ryukyoku) |
 | `risk/wall.rs` | NC / OC / DNC wall analysis |
 | `risk/base.rs` | Per-opponent deal-in risk + corrections |
 | `risk/mod.rs` | Mixed risk across opponents + best-defence pick |

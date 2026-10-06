@@ -180,6 +180,7 @@ mod tests {
                     num_players: 4,
                     players: Vec::new(),
                     dora_markers: Vec::new(),
+                    tiles_left: 0,
                     our_seat: Some(0),
                 },
             }
