@@ -12,6 +12,7 @@ import { BotActionTile } from './BotActionTile'
 import { BotShowTile } from './BotShowTile'
 import { ProxyControlTile } from './ProxyControlTile'
 import { RoundHistoryTile } from './RoundHistoryTile'
+import { TenpaiDrawsTile } from './TenpaiDrawsTile'
 import type { Breakpoint, TileId } from './defaults'
 
 export function renderTile(id: TileId, bp: Breakpoint) {
@@ -33,5 +34,6 @@ export function renderTile(id: TileId, bp: Breakpoint) {
     case 'bot-show':        return <BotShowTile bp={bp} />
     case 'proxy-control':   return <ProxyControlTile bp={bp} />
     case 'round-history':   return <RoundHistoryTile bp={bp} />
+    case 'tenpai-draws':    return <TenpaiDrawsTile bp={bp} />
   }
 }

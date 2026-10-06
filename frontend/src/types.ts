@@ -461,6 +461,16 @@ export type OpponentRisk = {
   is_riichi: boolean
 }
 
+export type TenpaiDraws = {
+  shanten: number
+  ukeire: number
+  draws_left: number
+  median: number | null
+  p80: number | null
+  by_ryukyoku: number
+  exact: boolean
+}
+
 export type AnalysisResult = {
   seat: number
   turn: number
@@ -472,6 +482,7 @@ export type AnalysisResult = {
   mixed_risk: number[]
   best_attack_discard: string | null
   best_defence_discard: string | null
+  tenpai_draws: TenpaiDraws | null
 }
 
 export type DiscardEntry = {
@@ -519,6 +530,8 @@ export type GameStateSnapshot = {
   /** Length matches num_players. */
   players: PlayerSnapshot[]
   dora_markers: string[]
+  /** Tiles left in the live wall. */
+  tiles_left: number
   our_seat: number | null
 }
 

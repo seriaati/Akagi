@@ -307,6 +307,18 @@ type AnalysisResult = {
   mixed_risk: number[];         // 34-vector, deal-in % across all opponents
   best_attack_discard: string | null;   // mjai tile string
   best_defence_discard: string | null;
+  tenpai_draws: TenpaiDraws | null;     // null when tenpai or wall count unknown
+};
+
+// Own draws until tenpai. Exact (hypergeometric) at 1-shanten, approximate at 2+.
+type TenpaiDraws = {
+  shanten: number;
+  ukeire: number;
+  draws_left: number;           // own draws before the live wall runs out
+  median: number | null;        // draws until P(tenpai) >= 50%
+  p80: number | null;           // draws until P(tenpai) >= 80%
+  by_ryukyoku: number;          // P(tenpai within draws_left), percent
+  exact: boolean;
 };
 
 type Hand13Result = {
@@ -377,6 +389,7 @@ type GameStateSnapshot = {
   num_players: number;       // 3 (sanma) or 4 (yonma)
   players: PlayerSnapshot[]; // length matches num_players
   dora_markers: string[];
+  tiles_left: number;        // live wall
   our_seat: number | null;   // captured from start_game.id
 };
 
