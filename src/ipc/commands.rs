@@ -1121,7 +1121,8 @@ pub async fn subscribe_inspector(
     on_event: tauri::ipc::Channel<InspectorEntry>,
 ) -> CmdResult<()> {
     let mut rx = state.log_session.subscribe_inspector();
-    tauri::async_runtime::spawn(async move {
+    let id = on_event.id();
+    let task = tauri::async_runtime::spawn(async move {
         loop {
             match rx.recv().await {
                 Ok(entry) => {
@@ -1146,6 +1147,7 @@ pub async fn subscribe_inspector(
             }
         }
     });
+    track_forwarder(&state, id, task);
     Ok(())
 }
 
@@ -1153,6 +1155,7 @@ pub async fn subscribe_inspector(
 /// forwarded over the supplied `tauri::ipc::Channel`. Slow consumers
 /// surface a synthetic `WARN akagi.logger "dropped N events…"` so the
 /// UI can show the gap explicitly. The forwarder task lives until the
+/// frontend calls `unsubscribe_stream` with the channel's id, or the
 /// broadcast is closed (process shutdown).
 #[tauri::command]
 pub async fn subscribe_log_events(
@@ -1160,7 +1163,8 @@ pub async fn subscribe_log_events(
     on_event: tauri::ipc::Channel<LogEntry>,
 ) -> CmdResult<()> {
     let mut rx = state.log_session.subscribe();
-    tauri::async_runtime::spawn(async move {
+    let id = on_event.id();
+    let task = tauri::async_runtime::spawn(async move {
         loop {
             match rx.recv().await {
                 Ok(entry) => {
@@ -1182,6 +1186,26 @@ pub async fn subscribe_log_events(
             }
         }
     });
+    track_forwarder(&state, id, task);
+    Ok(())
+}
+
+fn track_forwarder(state: &AppState, id: u32, task: tauri::async_runtime::JoinHandle<()>) {
+    let mut forwarders = state.stream_forwarders.lock().unwrap();
+    if let Some(old) = forwarders.insert(id, task) {
+        old.abort();
+    }
+}
+
+/// Stop a live-tail forwarder started by `subscribe_log_events` or
+/// `subscribe_inspector`. `id` is the frontend Channel's id. Without this
+/// every subscribe leaves a task serialising every entry to the webview
+/// until process exit.
+#[tauri::command]
+pub async fn unsubscribe_stream(state: State<'_, AppState>, id: u32) -> CmdResult<()> {
+    if let Some(task) = state.stream_forwarders.lock().unwrap().remove(&id) {
+        task.abort();
+    }
     Ok(())
 }
 
@@ -1786,6 +1810,7 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::subscribe_log_events,
             $crate::ipc::commands::read_inspector,
             $crate::ipc::commands::subscribe_inspector,
+            $crate::ipc::commands::unsubscribe_stream,
             $crate::ipc::commands::get_analysis,
             $crate::ipc::commands::get_game_snapshot,
             $crate::ipc::commands::get_mahgen_view,

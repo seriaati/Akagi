@@ -43,12 +43,15 @@ export function useInspectorStream(enabled: boolean): void {
       }
     }
 
-    invoke<void>('subscribe_inspector', { onEvent: channel }).catch((err) => {
+    const subscribed = invoke<void>('subscribe_inspector', { onEvent: channel }).catch((err) => {
       console.warn('subscribe_inspector failed:', err)
     })
 
     return () => {
       cancelled = true
+      void subscribed
+        .then(() => invoke<void>('unsubscribe_stream', { id: channel.id }))
+        .catch((err) => console.warn('unsubscribe_stream failed:', err))
       if (rafRef.current != null) {
         cancelAnimationFrame(rafRef.current)
         rafRef.current = null

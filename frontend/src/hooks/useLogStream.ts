@@ -15,11 +15,10 @@ import type { LogEntry } from '@/types'
  * `setEntries([...prev, ev])` would lock up the page.
  *
  * Lifecycle: one `tauri::ipc::Channel<LogEntry>` per subscribed render.
- * Tauri 2's Channel doesn't currently expose an explicit "stop" — the
- * backend forwarder task lives until the broadcast closes (process
- * shutdown). Re-subscribing on session/pause changes is therefore
- * cheap on the JS side but does spawn a fresh forwarder per call;
- * acceptable since users only flip these toggles by hand.
+ * Tauri 2's Channel has no "stop" of its own, so cleanup calls
+ * `unsubscribe_stream` with the channel's id to abort the backend
+ * forwarder — otherwise each re-subscribe would leave one running until
+ * process exit, serialising every entry to the webview.
  */
 export function useLogStream(enabled: boolean = true): void {
   const isLive = useLogsStore((s) => s.isLive)
@@ -56,7 +55,7 @@ export function useLogStream(enabled: boolean = true): void {
       }
     }
 
-    invoke<void>('subscribe_log_events', { onEvent: channel }).catch((err) => {
+    const subscribed = invoke<void>('subscribe_log_events', { onEvent: channel }).catch((err) => {
       // Surface in console — no toast: the user can see "no live entries"
       // in the viewer itself if the subscription fails.
       console.warn('subscribe_log_events failed:', err)
@@ -64,6 +63,9 @@ export function useLogStream(enabled: boolean = true): void {
 
     return () => {
       cancelled = true
+      void subscribed
+        .then(() => invoke<void>('unsubscribe_stream', { id: channel.id }))
+        .catch((err) => console.warn('unsubscribe_stream failed:', err))
       if (rafRef.current != null) {
         cancelAnimationFrame(rafRef.current)
         rafRef.current = null

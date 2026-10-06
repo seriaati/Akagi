@@ -28,7 +28,7 @@ use crate::history::recorder::SharedPlatform;
 use crate::history::HistoryStore;
 use crate::logger::Session;
 use crate::schema::{BotStatus, CaptureStatus};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -134,6 +134,10 @@ pub struct AppState {
     /// The frontend's UI language, for text the backend renders itself
     /// (Discord Rich Presence). Set by `set_ui_language`; not persisted.
     pub ui_lang: Arc<RwLock<crate::discord::Lang>>,
+    /// Live-tail forwarder tasks (`subscribe_log_events` /
+    /// `subscribe_inspector`), keyed by the frontend Channel id so
+    /// `unsubscribe_stream` can abort them when the Logs view lets go.
+    pub stream_forwarders: Arc<std::sync::Mutex<HashMap<u32, tauri::async_runtime::JoinHandle<()>>>>,
 }
 
 impl AppState {
@@ -182,6 +186,7 @@ impl AppState {
             updater_lock: Arc::new(Mutex::new(())),
             pending_update: Arc::new(RwLock::new(None)),
             ui_lang: Arc::new(RwLock::new(crate::discord::Lang::default())),
+            stream_forwarders: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 }
