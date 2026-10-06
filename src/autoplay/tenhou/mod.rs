@@ -923,6 +923,7 @@ mod tests {
             dora_markers: Vec::new(),
             tiles_left: 0,
             our_seat: Some(0),
+            match_info: None,
         }
     }
 
@@ -959,6 +960,7 @@ mod tests {
             dora_markers: Vec::new(),
             tiles_left: 0,
             our_seat: Some(0),
+            match_info: None,
         };
         let ctx = ActionContext {
             action: &action,

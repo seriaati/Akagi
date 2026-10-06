@@ -19,6 +19,8 @@ use riichienv_core::state_3p::GameState3P;
 use riichienv_core::types::{Meld, MeldType};
 use serde::{Deserialize, Serialize};
 
+use crate::schema::MatchInfo;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
@@ -156,6 +158,11 @@ pub struct GameStateSnapshot {
     /// The seat the active observer (our bot) plays as. Captured from the
     /// `start_game.id` field. `None` if the bridge didn't tag a perspective.
     pub our_seat: Option<u8>,
+    /// Room / rank lobby of the current game, from `start_game`'s in-process
+    /// meta. Filled in by the tracker; `None` when the bridge didn't capture
+    /// one.
+    #[serde(default)]
+    pub match_info: Option<MatchInfo>,
 }
 
 fn default_num_players() -> u8 {
@@ -232,6 +239,7 @@ impl GameStateSnapshot {
                 .collect(),
             tiles_left: s.wall.drawable_count,
             our_seat,
+            match_info: None,
         }
     }
 
@@ -298,6 +306,7 @@ impl GameStateSnapshot {
                 .collect(),
             tiles_left: s.wall.drawable_count,
             our_seat,
+            match_info: None,
         }
     }
 }

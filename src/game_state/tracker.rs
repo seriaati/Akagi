@@ -30,7 +30,7 @@ use crate::event_bus::TrackedEvent;
 use crate::game_state::convert;
 use crate::game_state::score::{evaluate_hora_3p, evaluate_hora_4p};
 use crate::game_state::snapshot::GameStateSnapshot;
-use crate::schema::{HoraScoreInfo, MjaiEvent as AkagiEvent};
+use crate::schema::{HoraScoreInfo, MatchInfo, MjaiEvent as AkagiEvent};
 use anyhow::Result;
 use riichienv_core::rule::GameRule;
 use riichienv_core::state::legal_actions::GameStateLegalActions;
@@ -70,6 +70,8 @@ pub struct GameTracker {
     rule: GameRule,
     /// The bot's own seat, captured from `start_game.id`.
     our_seat: Option<u8>,
+    /// Room / rank lobby of the current game, from `start_game`'s meta.
+    match_info: Option<MatchInfo>,
     /// Total events fed since process start. Useful for "is the bridge
     /// alive?" checks; not reset on game boundaries.
     pub events_seen: u64,
@@ -81,6 +83,7 @@ impl GameTracker {
             state: None,
             rule: GameRule::default_tenhou(),
             our_seat: None,
+            match_info: None,
             events_seen: 0,
         }
     }
@@ -92,7 +95,10 @@ impl GameTracker {
         self.events_seen += 1;
 
         if let AkagiEvent::StartGame {
-            id, num_players, ..
+            id,
+            num_players,
+            game_meta,
+            ..
         } = ev
         {
             // Fresh game → fresh state. Constructor seeds round 0 with the
@@ -111,6 +117,7 @@ impl GameTracker {
             // observer/replay mode). ALWAYS replace — never inherit stale
             // perspective from the previous game.
             self.our_seat = *id;
+            self.match_info = game_meta.as_ref().and_then(|m| m.match_info.clone());
         }
 
         // riichienv-core's `apply_mjai_event(Dahai)` pushes the tile onto
@@ -220,9 +227,13 @@ impl GameTracker {
     /// Snapshot of the current state. Returns `None` if no game has
     /// started yet.
     pub fn snapshot(&self) -> Option<GameStateSnapshot> {
-        self.state.as_ref().map(|tg| match tg {
-            TrackedGame::Four(s) => GameStateSnapshot::from_state(s, self.our_seat),
-            TrackedGame::Three(s) => GameStateSnapshot::from_state_3p(s, self.our_seat),
+        self.state.as_ref().map(|tg| {
+            let mut snap = match tg {
+                TrackedGame::Four(s) => GameStateSnapshot::from_state(s, self.our_seat),
+                TrackedGame::Three(s) => GameStateSnapshot::from_state_3p(s, self.our_seat),
+            };
+            snap.match_info = self.match_info.clone();
+            snap
         })
     }
 
@@ -823,6 +834,35 @@ mod tests {
         // Fourth game — back to seat 1.
         t.handle(&start_game_with_seat(Some(1))).unwrap();
         assert_eq!(t.our_seat(), Some(1));
+    }
+
+    /// The room captured at `start_game` rides every snapshot of that game,
+    /// and a later game without meta must not inherit it.
+    #[test]
+    fn snapshot_carries_match_info_from_start_game() {
+        let info = MatchInfo::Majsoul {
+            game_uuid: None,
+            mode_id: Some(5),
+            room_id: None,
+            contest_uid: None,
+        };
+        let mut t = GameTracker::new();
+        t.handle(&AkagiEvent::StartGame {
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+            kyoku_first: None,
+            aka_flag: None,
+            id: Some(0),
+            num_players: 4,
+            game_meta: Some(crate::schema::GameMeta {
+                match_info: Some(info.clone()),
+                ..Default::default()
+            }),
+        })
+        .unwrap();
+        assert_eq!(t.snapshot().unwrap().match_info, Some(info));
+
+        t.handle(&start_game_with_seat(Some(0))).unwrap();
+        assert_eq!(t.snapshot().unwrap().match_info, None);
     }
 
     /// Regression (issue #149): `riichienv-core 0.4.8` grows a hidden seat's

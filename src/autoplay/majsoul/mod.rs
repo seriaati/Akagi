@@ -810,6 +810,7 @@ mod tests {
             dora_markers: Vec::new(),
             tiles_left: 0,
             our_seat: Some(seat),
+            match_info: None,
         }
     }
 
@@ -1583,6 +1584,7 @@ mod tests {
             dora_markers: Vec::new(),
             tiles_left: 0,
             our_seat: Some(seat),
+            match_info: None,
         }
     }
 

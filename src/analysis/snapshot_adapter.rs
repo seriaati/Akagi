@@ -239,6 +239,7 @@ mod tests {
             dora_markers: vec!["2m".into()],
             tiles_left: 0,
             our_seat: Some(0),
+            match_info: None,
         }
     }
 
