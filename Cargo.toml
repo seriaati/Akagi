@@ -103,3 +103,11 @@ tokio = { version = "1", features = ["net"] }
 # The certificate-report test stands up a real TLS origin, so the proxy's
 # upstream verifier has a genuine certificate to observe and record.
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs"] }
+
+# Full debug info made every debug binary ~520 MB (~90% of it DWARF). Line
+# tables keep file:line in backtraces for our code; dependencies get none.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
