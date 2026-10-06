@@ -6,11 +6,7 @@
 //! verifier on the upstream leg actually records what an origin serves,
 //! and that a beacon travelling through the proxy comes out the other
 //! side carrying those values. Nothing is stubbed but the origin itself.
-//!
-//! Its own binary because `Session::init` installs a process-global
-//! tracing subscriber — see `tests/common/mod.rs`.
 
-mod common;
 
 use std::sync::Arc;
 use std::time::Duration;

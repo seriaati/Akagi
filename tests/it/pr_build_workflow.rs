@@ -1,4 +1,4 @@
-const WORKFLOW: &str = include_str!("../.github/workflows/pr-build.yml");
+const WORKFLOW: &str = include_str!("../../.github/workflows/pr-build.yml");
 
 #[test]
 fn pr_build_comment_job_uses_pull_request_write_permission() {

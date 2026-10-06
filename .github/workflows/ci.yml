@@ -64,7 +64,7 @@ jobs:
 
       # Compile every test target (integration tests, benches) without
       # running them. This is the check that would have caught the
-      # spawn_with_command arity break in tests/example_bot.rs.
+      # spawn_with_command arity break in tests/it/example_bot.rs.
       - name: build all test targets
         run: cargo test --no-run --all-targets
 

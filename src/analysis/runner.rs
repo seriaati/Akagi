@@ -5,7 +5,7 @@
 //! the full analysis whether the event affected our hand or not — the
 //! per-event cost (~200 µs in release for a 13-tile state, up to ~1 ms
 //! for a 14-tile discard search) is comfortably below the IPC latency
-//! budget. See `tests/analysis_bench.rs` for the figures.
+//! budget. See `tests/it/analysis_bench.rs` for the figures.
 
 use std::sync::Arc;
 

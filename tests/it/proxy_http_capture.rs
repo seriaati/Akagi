@@ -7,10 +7,9 @@
 //! drives a real proxy and a real upstream over real sockets and asserts
 //! what comes back out of `<session>/inspector.jsonl`.
 
-mod common;
 
 use akagi::config::HttpCaptureConfig;
-use common::{get_through_proxy, Harness, BEACON_QUERY, UPSTREAM_BODY};
+use crate::common::{get_through_proxy, Harness, BEACON_QUERY, UPSTREAM_BODY};
 
 /// The default policy: recognized exchanges are kept, everything else is
 /// not. This is what a user who never touches the config gets, so it is

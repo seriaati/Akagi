@@ -215,10 +215,11 @@ impl Session {
             );
         }
 
-        tracing_subscriber::registry()
-            .with(layers)
-            .try_init()
-            .context("Failed to install tracing subscriber")?;
+        // Fails only if a global subscriber is already installed, which the
+        // app never does but the integration tests do: they share one process
+        // and each opens its own Session. The existing subscriber keeps the
+        // events; this session's dir and inspector work regardless.
+        let _ = tracing_subscriber::registry().with(layers).try_init();
 
         Ok(Self {
             dir,

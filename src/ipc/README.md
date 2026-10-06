@@ -158,4 +158,4 @@ disable the feature. Only a deliberate × (which routes through
   `missing_bot_in_registry_emits_error_status`,
   `end_game_flushes_drops_runner_emits_stopped`). The happy-path
   `Loading{SyncingDeps} → Loading{Spawning} → Ready` sequence is
-  exercised end-to-end by the integration tests in `tests/example_bot.rs`.
+  exercised end-to-end by the integration tests in `tests/it/example_bot.rs`.

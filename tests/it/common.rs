@@ -1,10 +1,4 @@
 //! Shared harness for the proxy HTTP-capture tests.
-//!
-//! Each test lives in its own binary rather than sharing one: `Session::init`
-//! installs a **global** tracing subscriber, which can only be set once per
-//! process, so two `#[tokio::test]`s in one binary would have the second fail
-//! at startup. Splitting the binaries is cheaper than making the logger
-//! re-entrant for the sake of tests.
 
 #![allow(dead_code)]
 

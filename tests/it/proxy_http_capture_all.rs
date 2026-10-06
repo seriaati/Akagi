@@ -1,12 +1,9 @@
 //! `record_all` is the opt-in policy: everything intercepted is recorded,
-//! not just the exchanges a recognizer understood. Its own binary because
-//! `Session::init` installs a process-global tracing subscriber — see
-//! `tests/common/mod.rs`.
+//! not just the exchanges a recognizer understood.
 
-mod common;
 
 use akagi::config::HttpCaptureConfig;
-use common::{get_through_proxy, Harness, UPSTREAM_BODY};
+use crate::common::{get_through_proxy, Harness, UPSTREAM_BODY};
 
 /// `record_all` keeps the traffic that used to be discarded — and pairs
 /// each response back to its request.

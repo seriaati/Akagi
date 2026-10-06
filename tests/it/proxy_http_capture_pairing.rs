@@ -1,13 +1,9 @@
 //! Regression: a request hudsucker does not answer through
 //! `handle_response` must not desynchronise the request/response pairing.
-//!
-//! Its own binary because `Session::init` installs a process-global
-//! tracing subscriber — see `tests/common/mod.rs`.
 
-mod common;
 
 use akagi::config::HttpCaptureConfig;
-use common::{pipeline_through_proxy, Harness, UPSTREAM_BODY};
+use crate::common::{pipeline_through_proxy, Harness, UPSTREAM_BODY};
 
 /// Regression: a request hudsucker does **not** answer through
 /// `handle_response` must not desynchronise the pairing queue.

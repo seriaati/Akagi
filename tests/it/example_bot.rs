@@ -13,7 +13,7 @@
 //! Run manually:
 //! ```sh
 //! cd mjai_bot/example && UV_PROJECT_ENVIRONMENT=.akagi/venv uv sync
-//! cargo test --test example_bot -- --nocapture
+//! cargo test --test it example_bot -- --nocapture
 //! ```
 
 use akagi::bot::{BotRunner, PythonRuntime, RuntimeMode, SubprocessBot};

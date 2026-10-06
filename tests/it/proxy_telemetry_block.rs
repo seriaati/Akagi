@@ -5,14 +5,11 @@
 //! The stub upstream returns a distinctive body (`UPSTREAM_BODY`). A
 //! forwarded request carries that body back to the client; a blocked one
 //! cannot, because it never reached the upstream. That difference is the
-//! whole proof, so no request counter is needed. Its own binary because
-//! `Session::init` installs a process-global tracing subscriber — see
-//! `tests/common/mod.rs`.
+//! whole proof, so no request counter is needed.
 
-mod common;
 
 use akagi::config::HttpCaptureConfig;
-use common::{get_through_proxy, Harness, BEACON_QUERY, UPSTREAM_BODY};
+use crate::common::{get_through_proxy, Harness, BEACON_QUERY, UPSTREAM_BODY};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_beacon_is_blocked_while_ordinary_traffic_forwards() {

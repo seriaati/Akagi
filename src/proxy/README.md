@@ -18,7 +18,7 @@ Tunneling that deadlocks. hudsucker's `process_connect` answers `200` and then b
 
 Tunneling it *correctly* is not an option either — libcurl's `socketpair()` emulation verifies that the address it accepted matches its connecting socket's local address, which a proxied hop breaks. So `handle_request` returns `403` immediately, which short-circuits hudsucker's `proxy()` before that blocking read is reached.
 
-The refusal also pushes a **sticky `warn` toast** (id `proxy-loopback-connect`) onto `NotifyBus` — nobody opens the log while staring at a game that never finishes loading. `ProxyHandler` latches on the first refusal (`loopback_notified`), so the toast fires once even though a misconfigured redirector produces one refused CONNECT per socket the game opens; the log keeps every occurrence (first at `WARN`, the rest at `DEBUG`). `start_proxy` takes the bus as `Option<NotifyBus>` — `None` in "log only" mode. The user-facing fix is to exclude loopback in the redirector. Covered by `tests/proxy_loopback_connect.rs`.
+The refusal also pushes a **sticky `warn` toast** (id `proxy-loopback-connect`) onto `NotifyBus` — nobody opens the log while staring at a game that never finishes loading. `ProxyHandler` latches on the first refusal (`loopback_notified`), so the toast fires once even though a misconfigured redirector produces one refused CONNECT per socket the game opens; the log keeps every occurrence (first at `WARN`, the rest at `DEBUG`). `start_proxy` takes the bus as `Option<NotifyBus>` — `None` in "log only" mode. The user-facing fix is to exclude loopback in the redirector. Covered by `tests/it/proxy_loopback_connect.rs`.
 - `upstream.rs` — Custom hyper-rustls connector used for the proxy → server leg. Skips server-cert validation (`NoVerify`) on purpose so we can talk to CDN IPs whose default cert covers only DNS hostnames, matching the game client's own loose validation. Replaces what hudsucker's `with_rustls_connector` would have given us. See the module-level doc for the threat-model justification.
 
 ## CA Certificate
@@ -117,7 +117,7 @@ Switched by `[proxy] rewrite_certificate_report` (default **on**). Turn it
 off to capture what the client *would* have said — the only way to check
 the correction is still complete after a client update. MITM-only; a
 browser cannot report peer certificates at all, so the chromium backend
-has nothing to correct. Covered by `tests/proxy_cert_report_rewrite.rs`,
+has nothing to correct. Covered by `tests/it/proxy_cert_report_rewrite.rs`,
 which stands up a real TLS origin and asserts on what left the machine.
 
 ## Telemetry beacons are blocked
@@ -146,7 +146,7 @@ blind spot.
 Switched by `[proxy] block_telemetry` (default **on**). Turn it off to
 forward the beacons — the certificate report is then corrected instead of
 dropped. MITM-only; the chromium backend intercepts nothing to drop.
-Covered by `tests/proxy_telemetry_block.rs`, which asserts a beacon is
+Covered by `tests/it/proxy_telemetry_block.rs`, which asserts a beacon is
 answered locally and never reaches the upstream while ordinary traffic
 still forwards.
 

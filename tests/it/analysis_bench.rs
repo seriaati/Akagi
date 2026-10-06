@@ -1,7 +1,7 @@
 //! Hand-rolled timing benchmarks for the analysis engine.
 //!
 //! Run with:
-//!     cargo test --release --test analysis_bench -- --ignored --nocapture
+//!     cargo test --release --test it analysis_bench -- --ignored --nocapture
 //!
 //! These are gated `#[ignore]` because they are not correctness tests — they
 //! exist solely to estimate the cost of adding the `Improves` layer to
