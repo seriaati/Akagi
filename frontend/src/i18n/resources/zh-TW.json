@@ -334,6 +334,7 @@
     "phase": "階段",
     "room": "房間",
     "position": "順位",
+    "draws_left": "剩餘摸牌",
     "hide_x": "隱藏 {{title}}"
   },
   "common": {

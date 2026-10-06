@@ -13,6 +13,7 @@ export function HeaderTile({ bp }: { bp: Breakpoint }) {
   const view = useGameStore((s) => s.view)
   const room = roomLabelKey(game?.match_info)
   const position = game ? ourPosition(game) : null
+  const draws = game ? ourDrawsLeft(game) : null
 
   return (
     <TileFrame id="header" title={t('tile.header')} bp={bp} contentClassName="flex items-center gap-6 px-4">
@@ -54,6 +55,8 @@ export function HeaderTile({ bp }: { bp: Breakpoint }) {
         <Stat label={t('tile.position')} value={t(`history.stat.rank${position}`)} />
       )}
 
+      {draws != null && <Stat label={t('tile.draws_left')} value={draws} mono />}
+
       {game && (
         <Stat label={t('tile.phase')} value={game.phase} mono />
       )}
@@ -69,6 +72,17 @@ function ourPosition(game: GameStateSnapshot): number | null {
   const ours = game.players[seat]?.score
   if (ours == null) return null
   return 1 + game.players.filter((p) => p.score > ours || (p.score === ours && p.seat < seat)).length
+}
+
+/** Our own draws left from the live wall, assuming no calls skip turns.
+ * `current_player` has already drawn, so the next draw goes to the seat after
+ * it. Mirrors the backend's `own_draws_left`. */
+function ourDrawsLeft(game: GameStateSnapshot): number | null {
+  const seat = game.our_seat
+  if (seat == null) return null
+  const np = Math.max(game.num_players, 1)
+  const pos = (seat - game.current_player + np) % np || np
+  return game.tiles_left < pos ? 0 : Math.floor((game.tiles_left - pos) / np) + 1
 }
 
 function Stat({ label, value, mono }: { label: string; value: number | string; mono?: boolean }) {

@@ -334,6 +334,7 @@
     "phase": "Phase",
     "room": "Room",
     "position": "Position",
+    "draws_left": "Draws left",
     "hide_x": "Hide {{title}}"
   },
   "common": {

@@ -334,6 +334,7 @@
     "phase": "フェーズ",
     "room": "卓",
     "position": "順位",
+    "draws_left": "残りツモ",
     "hide_x": "{{title}} を非表示"
   },
   "common": {

@@ -334,6 +334,7 @@
     "phase": "阶段",
     "room": "房间",
     "position": "顺位",
+    "draws_left": "剩余摸牌",
     "hide_x": "隐藏 {{title}}"
   },
   "common": {
