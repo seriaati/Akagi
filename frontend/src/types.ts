@@ -533,6 +533,8 @@ export type GameStateSnapshot = {
   /** Tiles left in the live wall. */
   tiles_left: number
   our_seat: number | null
+  /** Room / rank lobby of the current game; absent when the bridge didn't capture one. */
+  match_info?: MatchInfo | null
 }
 
 export type PlayerMahgenView = {

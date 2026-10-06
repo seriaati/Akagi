@@ -3,12 +3,16 @@ import { TileFrame } from '@/components/TileFrame'
 import { Mahgen } from '@/components/Mahgen'
 import { useGameStore } from '@/stores/gameStore'
 import { kyokuLabel } from '@/lib/format'
+import { roomLabelKey } from '@/lib/matchInfo'
 import type { Breakpoint } from '@/tiles/defaults'
+import type { GameStateSnapshot } from '@/types'
 
 export function HeaderTile({ bp }: { bp: Breakpoint }) {
   const { t } = useTranslation()
   const game = useGameStore((s) => s.game)
   const view = useGameStore((s) => s.view)
+  const room = roomLabelKey(game?.match_info)
+  const position = game ? ourPosition(game) : null
 
   return (
     <TileFrame id="header" title={t('tile.header')} bp={bp} contentClassName="flex items-center gap-6 px-4">
@@ -44,11 +48,27 @@ export function HeaderTile({ bp }: { bp: Breakpoint }) {
         </div>
       )}
 
+      {room && <Stat label={t('tile.room')} value={t(room.key, room.params)} />}
+
+      {position != null && (
+        <Stat label={t('tile.position')} value={t(`history.stat.rank${position}`)} />
+      )}
+
       {game && (
         <Stat label={t('tile.phase')} value={game.phase} mono />
       )}
     </TileFrame>
   )
+}
+
+/** Our current 1-based placement by score; ties go to the lower seat (the
+ * earlier starting-dealer order), matching the backend's `ranks_from_scores`. */
+function ourPosition(game: GameStateSnapshot): number | null {
+  const seat = game.our_seat
+  if (seat == null) return null
+  const ours = game.players[seat]?.score
+  if (ours == null) return null
+  return 1 + game.players.filter((p) => p.score > ours || (p.score === ours && p.seat < seat)).length
 }
 
 function Stat({ label, value, mono }: { label: string; value: number | string; mono?: boolean }) {

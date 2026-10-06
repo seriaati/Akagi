@@ -324,6 +324,8 @@
     "tenpai_draws_approx": "估算（仅一向听为精确值）",
     "dora": "宝牌",
     "phase": "阶段",
+    "room": "房间",
+    "position": "顺位",
     "hide_x": "隐藏 {{title}}"
   },
   "common": {
