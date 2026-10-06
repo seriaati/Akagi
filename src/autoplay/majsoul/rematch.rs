@@ -17,6 +17,9 @@
 //! - only 確認 visible → press it, at most [`MAX_CONFIRMS`] times: the two
 //!   screens before the last. A third press could only be the final
 //!   screen's 確認.
+//! - the reward screen (獲得獎勵, a band across the screen between two
+//!   gold rules) → press inside the band to dismiss it. It can come up
+//!   before the result screens, and has no button of its own.
 //! - neither → still animating; wait.
 //!
 //! A screen must read the same on two polls in a row, and again after the
@@ -76,6 +79,19 @@ const PROMPT_CANCEL: Button = Button {
     colour: is_play_again_blue,
 };
 
+/// The reward screen's band is edged by two 1px gold rules running the
+/// full width, at these heights (16:9-normalised, measured from a live
+/// reward screen, canvas 909×515). Each is looked for in a strip this tall
+/// around it, so a line a pixel or two off still lands inside.
+const REWARD_RULES: [f64; 2] = [2.71, 6.06];
+const REWARD_RULE_SLACK: f64 = 0.1;
+/// Where the reward screen is pressed to dismiss it: inside the band,
+/// right of the rewards and below the chest's progress bar.
+const REWARD_DISMISS: (f64, f64) = (11.5, 5.6);
+/// Share of a row that must be rule gold to count as the rule. Measured:
+/// 1.0 on both rules; no other row of the reward screen passes ~0.26.
+const MIN_RULE_COVERAGE: f64 = 0.8;
+
 /// Share of a sample area that must match the button's colour. Measured:
 /// ~0.88 for 確認, ~0.75 for 再來一場, and ~0.84 / ~0.81 for the prompt's
 /// 確認 / 取消 when shown; the result-screen art
@@ -87,6 +103,8 @@ const MAX_CONFIRMS: u32 = 2;
 const MAX_PLAY_AGAIN: u32 = 3;
 /// Prompt 確認 presses allowed, likewise.
 const MAX_PROMPT_CONFIRMS: u32 = 3;
+/// Reward screen presses allowed; more than one reward can be shown.
+const MAX_REWARD_DISMISSALS: u32 = 5;
 const POLL: Duration = Duration::from_secs(1);
 /// The end screens take well under this even when read slowly by hand.
 const GIVE_UP_AFTER: Duration = Duration::from_secs(180);
@@ -101,6 +119,8 @@ enum Screen {
     PlayAgain,
     /// The prompt 再來一場 opens, 確認 and 取消 side by side.
     Prompt,
+    /// 獲得獎勵: rewards shown in a band across the screen.
+    Reward,
 }
 
 fn is_confirm_yellow([r, g, b]: [u8; 3]) -> bool {
@@ -111,6 +131,11 @@ fn is_play_again_blue([r, _, b]: [u8; 3]) -> bool {
     b > 110 && i16::from(b) - i16::from(r) > 50
 }
 
+/// The reward band's rules, ~(166, 157, 105).
+fn is_rule_gold([r, g, b]: [u8; 3]) -> bool {
+    r > 140 && g > 110 && b < 140 && i16::from(r) - i16::from(b) > 40
+}
+
 fn coverage(pixels: &[[u8; 3]], colour: fn([u8; 3]) -> bool) -> f64 {
     if pixels.is_empty() {
         return 0.0;
@@ -118,9 +143,18 @@ fn coverage(pixels: &[[u8; 3]], colour: fn([u8; 3]) -> bool) -> f64 {
     pixels.iter().filter(|p| colour(**p)).count() as f64 / pixels.len() as f64
 }
 
-fn classify(confirm: f64, play_again: f64, prompt_confirm: f64, prompt_cancel: f64) -> Screen {
+fn classify(
+    confirm: f64,
+    play_again: f64,
+    prompt_confirm: f64,
+    prompt_cancel: f64,
+    reward_rules: [f64; 2],
+) -> Screen {
     if prompt_confirm >= MIN_COVERAGE && prompt_cancel >= MIN_COVERAGE {
         return Screen::Prompt;
+    }
+    if reward_rules.iter().all(|&c| c >= MIN_RULE_COVERAGE) {
+        return Screen::Reward;
     }
     match (confirm >= MIN_COVERAGE, play_again >= MIN_COVERAGE) {
         (true, true) => Screen::PlayAgain,
@@ -179,7 +213,7 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
     info!("auto-rematch: match over, watching the result screens");
     let queued_before = ctx.input_watch.match_requests();
     let started = Instant::now();
-    let (mut confirms, mut play_agains, mut prompts) = (0u32, 0u32, 0u32);
+    let (mut confirms, mut play_agains, mut prompts, mut rewards) = (0u32, 0u32, 0u32, 0u32);
     let mut last: Option<Screen> = None;
     loop {
         tokio::time::sleep(POLL).await;
@@ -194,7 +228,7 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
         }
         if started.elapsed() > GIVE_UP_AFTER {
             warn!(
-                "auto-rematch: no rematch after {}s (確認 pressed {confirms}x, 再來一場 {play_agains}x, prompt 確認 {prompts}x); giving up",
+                "auto-rematch: no rematch after {}s (確認 pressed {confirms}x, 再來一場 {play_agains}x, prompt 確認 {prompts}x, rewards {rewards}x); giving up",
                 GIVE_UP_AFTER.as_secs()
             );
             return false;
@@ -213,10 +247,15 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
         if last.replace(screen) != Some(screen) {
             continue;
         }
-        let (button, label) = match screen {
-            Screen::Prompt if prompts < MAX_PROMPT_CONFIRMS => (&PROMPT_CONFIRM, "prompt 確認"),
-            Screen::PlayAgain if play_agains < MAX_PLAY_AGAIN => (&PLAY_AGAIN, "再來一場"),
-            Screen::Confirm if confirms < MAX_CONFIRMS => (&CONFIRM, "確認"),
+        let (target, label) = match screen {
+            Screen::Prompt if prompts < MAX_PROMPT_CONFIRMS => {
+                (PROMPT_CONFIRM.centre, "prompt 確認")
+            }
+            Screen::Reward if rewards < MAX_REWARD_DISMISSALS => {
+                (REWARD_DISMISS, "the reward screen")
+            }
+            Screen::PlayAgain if play_agains < MAX_PLAY_AGAIN => (PLAY_AGAIN.centre, "再來一場"),
+            Screen::Confirm if confirms < MAX_CONFIRMS => (CONFIRM.centre, "確認"),
             _ => continue,
         };
 
@@ -239,7 +278,7 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
                 guard.autoplay.majsoul.click_hold_ms,
             )
         };
-        let (x, y) = rect.pixel(button.centre.0, button.centre.1);
+        let (x, y) = rect.pixel(target.0, target.1);
         info!("auto-rematch: pressing {label}");
         if let Err(e) = dispatch_click(&page, x, y, hover, hold).await {
             warn!("auto-rematch: {label} press failed: {e:#}");
@@ -248,6 +287,7 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
         match screen {
             Screen::Prompt => prompts += 1,
             Screen::PlayAgain => play_agains += 1,
+            Screen::Reward => rewards += 1,
             _ => confirms += 1,
         }
         // The press should change the screen; whatever shows next has to
@@ -264,12 +304,23 @@ async fn read_screen(page: &Page) -> anyhow::Result<(Screen, CanvasRect)> {
         let pixels: Vec<_> = region(&frame, &rect, button.sample).concat();
         coverage(&pixels, button.colour)
     };
+    let rule = |y: f64| {
+        region(
+            &frame,
+            &rect,
+            (1.0, y - REWARD_RULE_SLACK, 15.0, y + REWARD_RULE_SLACK),
+        )
+        .iter()
+        .map(|row| coverage(row, is_rule_gold))
+        .fold(0.0, f64::max)
+    };
     Ok((
         classify(
             sample(&CONFIRM),
             sample(&PLAY_AGAIN),
             sample(&PROMPT_CONFIRM),
             sample(&PROMPT_CANCEL),
+            REWARD_RULES.map(rule),
         ),
         rect,
     ))
@@ -333,12 +384,40 @@ mod tests {
     /// both its buttons, and dims the result-screen buttons behind it.
     #[test]
     fn screens_classify_from_measured_coverage() {
-        assert_eq!(classify(0.88, 0.0, 0.0, 0.0), Screen::Confirm);
-        assert_eq!(classify(0.88, 0.75, 0.0, 0.0), Screen::PlayAgain);
-        assert_eq!(classify(0.13, 0.0, 0.0, 0.0), Screen::Busy);
-        assert_eq!(classify(0.0, 0.75, 0.0, 0.0), Screen::Busy);
-        assert_eq!(classify(0.0, 0.0, 0.84, 0.81), Screen::Prompt);
-        assert_eq!(classify(0.0, 0.0, 0.84, 0.0), Screen::Busy);
-        assert_eq!(classify(0.0, 0.0, 0.0, 0.81), Screen::Busy);
+        const NO_RULES: [f64; 2] = [0.0, 0.0];
+        assert_eq!(classify(0.88, 0.0, 0.0, 0.0, NO_RULES), Screen::Confirm);
+        assert_eq!(classify(0.88, 0.75, 0.0, 0.0, NO_RULES), Screen::PlayAgain);
+        assert_eq!(classify(0.13, 0.0, 0.0, 0.0, NO_RULES), Screen::Busy);
+        assert_eq!(classify(0.0, 0.75, 0.0, 0.0, NO_RULES), Screen::Busy);
+        assert_eq!(classify(0.0, 0.0, 0.84, 0.81, NO_RULES), Screen::Prompt);
+        assert_eq!(classify(0.0, 0.0, 0.84, 0.0, NO_RULES), Screen::Busy);
+        assert_eq!(classify(0.0, 0.0, 0.0, 0.81, NO_RULES), Screen::Busy);
+    }
+
+    /// The reward screen needs both rules; the brightest other row of a
+    /// live reward screen reads ~0.26.
+    #[test]
+    fn reward_screen_needs_both_rules() {
+        assert_eq!(classify(0.0, 0.0, 0.0, 0.0, [1.0, 1.0]), Screen::Reward);
+        assert_eq!(classify(0.0, 0.0, 0.0, 0.0, [1.0, 0.26]), Screen::Busy);
+        assert_eq!(classify(0.0, 0.0, 0.0, 0.0, [0.26, 1.0]), Screen::Busy);
+    }
+
+    /// Rule colours sampled from a live reward screen, and the rows
+    /// either side of them.
+    #[test]
+    fn rule_gold_matches_only_the_rules() {
+        for p in [[165, 157, 105], [167, 158, 104], [165, 153, 106]] {
+            assert!(is_rule_gold(p), "{p:?}");
+        }
+        for p in [
+            [63, 66, 69],
+            [69, 69, 57],
+            [233, 208, 182],
+            [44, 49, 62],
+            [15, 22, 35],
+        ] {
+            assert!(!is_rule_gold(p), "{p:?}");
+        }
     }
 }
