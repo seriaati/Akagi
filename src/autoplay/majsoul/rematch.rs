@@ -4,14 +4,16 @@
 //! `match_sid`).
 //!
 //! The end sequence is three screens, each with 確認 in the same spot; only
-//! the last also carries 再來一場, to its left. Pressing 確認 on that last
+//! the last also carries 再來一場, to its left. 再來一場 opens a prompt
+//! naming the mode, whose own 確認 is what actually queues. Pressing 確認 on that last
 //! screen leaves for the lobby, so timing alone cannot drive this — one
 //! press too many and the rematch is lost. Instead the watcher reads the
 //! two button areas off a screenshot of the canvas and presses what is
 //! actually showing:
 //!
-//! - 確認 and 再來一場 both visible → press 再來一場. Done once the
+//! - the prompt's 確認 and 取消 visible → press its 確認. Done once the
 //!   client's queue request is seen.
+//! - 確認 and 再來一場 both visible → press 再來一場.
 //! - only 確認 visible → press it, at most [`MAX_CONFIRMS`] times: the two
 //!   screens before the last. A third press could only be the final
 //!   screen's 確認.
@@ -60,15 +62,31 @@ const PLAY_AGAIN: Button = Button {
     sample: (11.35, 8.0, 12.95, 8.42),
     colour: is_play_again_blue,
 };
+/// The 再來一場 prompt's buttons, measured from a live prompt (canvas
+/// 910×512). The dialog dims the screen behind it, so the buttons above
+/// no longer read while it is up.
+const PROMPT_CONFIRM: Button = Button {
+    centre: (6.48, 6.61),
+    sample: (5.5, 6.5, 7.25, 6.75),
+    colour: is_confirm_yellow,
+};
+const PROMPT_CANCEL: Button = Button {
+    centre: (9.44, 6.59),
+    sample: (8.5, 6.5, 10.2, 6.75),
+    colour: is_play_again_blue,
+};
 
 /// Share of a sample area that must match the button's colour. Measured:
-/// ~0.88 for 確認 and ~0.75 for 再來一場 when shown; the result-screen art
+/// ~0.88 for 確認, ~0.75 for 再來一場, and ~0.84 / ~0.81 for the prompt's
+/// 確認 / 取消 when shown; the result-screen art
 /// behind them reaches ~0.13 at most.
 const MIN_COVERAGE: f64 = 0.5;
 /// 確認 presses allowed per match end — one per screen before the last.
 const MAX_CONFIRMS: u32 = 2;
 /// 再來一場 presses allowed before giving up on a client that ignores them.
 const MAX_PLAY_AGAIN: u32 = 3;
+/// Prompt 確認 presses allowed, likewise.
+const MAX_PROMPT_CONFIRMS: u32 = 3;
 const POLL: Duration = Duration::from_secs(1);
 /// The end screens take well under this even when read slowly by hand.
 const GIVE_UP_AFTER: Duration = Duration::from_secs(180);
@@ -81,6 +99,8 @@ enum Screen {
     Confirm,
     /// 確認 with 再來一場 beside it: the last screen.
     PlayAgain,
+    /// The prompt 再來一場 opens, 確認 and 取消 side by side.
+    Prompt,
 }
 
 fn is_confirm_yellow([r, g, b]: [u8; 3]) -> bool {
@@ -98,7 +118,10 @@ fn coverage(pixels: &[[u8; 3]], colour: fn([u8; 3]) -> bool) -> f64 {
     pixels.iter().filter(|p| colour(**p)).count() as f64 / pixels.len() as f64
 }
 
-fn classify(confirm: f64, play_again: f64) -> Screen {
+fn classify(confirm: f64, play_again: f64, prompt_confirm: f64, prompt_cancel: f64) -> Screen {
+    if prompt_confirm >= MIN_COVERAGE && prompt_cancel >= MIN_COVERAGE {
+        return Screen::Prompt;
+    }
     match (confirm >= MIN_COVERAGE, play_again >= MIN_COVERAGE) {
         (true, true) => Screen::PlayAgain,
         (true, false) => Screen::Confirm,
@@ -156,7 +179,7 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
     info!("auto-rematch: match over, watching the result screens");
     let queued_before = ctx.input_watch.match_requests();
     let started = Instant::now();
-    let (mut confirms, mut play_agains) = (0u32, 0u32);
+    let (mut confirms, mut play_agains, mut prompts) = (0u32, 0u32, 0u32);
     let mut last: Option<Screen> = None;
     loop {
         tokio::time::sleep(POLL).await;
@@ -171,7 +194,7 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
         }
         if started.elapsed() > GIVE_UP_AFTER {
             warn!(
-                "auto-rematch: no rematch after {}s (確認 pressed {confirms}x, 再來一場 {play_agains}x); giving up",
+                "auto-rematch: no rematch after {}s (確認 pressed {confirms}x, 再來一場 {play_agains}x, prompt 確認 {prompts}x); giving up",
                 GIVE_UP_AFTER.as_secs()
             );
             return false;
@@ -191,6 +214,7 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
             continue;
         }
         let (button, label) = match screen {
+            Screen::Prompt if prompts < MAX_PROMPT_CONFIRMS => (&PROMPT_CONFIRM, "prompt 確認"),
             Screen::PlayAgain if play_agains < MAX_PLAY_AGAIN => (&PLAY_AGAIN, "再來一場"),
             Screen::Confirm if confirms < MAX_CONFIRMS => (&CONFIRM, "確認"),
             _ => continue,
@@ -222,6 +246,7 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
             continue;
         }
         match screen {
+            Screen::Prompt => prompts += 1,
             Screen::PlayAgain => play_agains += 1,
             _ => confirms += 1,
         }
@@ -235,7 +260,12 @@ async fn read_screen(page: &Page) -> anyhow::Result<(Screen, CanvasRect)> {
     let rect = evaluate_canvas_rect(page).await?;
     let confirm = sample(page, &rect, &CONFIRM).await?;
     let play_again = sample(page, &rect, &PLAY_AGAIN).await?;
-    Ok((classify(confirm, play_again), rect))
+    let prompt_confirm = sample(page, &rect, &PROMPT_CONFIRM).await?;
+    let prompt_cancel = sample(page, &rect, &PROMPT_CANCEL).await?;
+    Ok((
+        classify(confirm, play_again, prompt_confirm, prompt_cancel),
+        rect,
+    ))
 }
 
 async fn sample(page: &Page, rect: &CanvasRect, button: &Button) -> anyhow::Result<f64> {
@@ -289,12 +319,16 @@ mod tests {
     }
 
     /// 再來一場 counts only alongside 確認: the last screen shows both, so
-    /// blue on its own is not a result screen.
+    /// blue on its own is not a result screen. The prompt likewise needs
+    /// both its buttons, and dims the result-screen buttons behind it.
     #[test]
     fn screens_classify_from_measured_coverage() {
-        assert_eq!(classify(0.88, 0.0), Screen::Confirm);
-        assert_eq!(classify(0.88, 0.75), Screen::PlayAgain);
-        assert_eq!(classify(0.13, 0.0), Screen::Busy);
-        assert_eq!(classify(0.0, 0.75), Screen::Busy);
+        assert_eq!(classify(0.88, 0.0, 0.0, 0.0), Screen::Confirm);
+        assert_eq!(classify(0.88, 0.75, 0.0, 0.0), Screen::PlayAgain);
+        assert_eq!(classify(0.13, 0.0, 0.0, 0.0), Screen::Busy);
+        assert_eq!(classify(0.0, 0.75, 0.0, 0.0), Screen::Busy);
+        assert_eq!(classify(0.0, 0.0, 0.84, 0.81), Screen::Prompt);
+        assert_eq!(classify(0.0, 0.0, 0.84, 0.0), Screen::Busy);
+        assert_eq!(classify(0.0, 0.0, 0.0, 0.81), Screen::Busy);
     }
 }
