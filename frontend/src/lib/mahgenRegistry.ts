@@ -85,7 +85,7 @@ export function applyMahgenSize(el: MahgenEl): void {
   if (!el.isConnected) {
     entry.retries += 1
     if (entry.retries > 6) {
-      registry.delete(el)
+      forgetMahgen(el)
       return
     }
     requestAnimationFrame(() => applyMahgenSize(el))
@@ -198,7 +198,19 @@ export function registerMahgen(el: MahgenEl, kind: MahgenKind, container: HTMLEl
 }
 
 export function unregisterMahgen(el: MahgenEl): void {
+  forgetMahgen(el)
+}
+
+// Drop the entry, and stop observing its container once no other entry uses
+// it — otherwise every unmounted river/meld/rec container stays observed (and
+// alive) for the rest of the session.
+function forgetMahgen(el: MahgenEl): void {
+  const container = registry.get(el)?.container
   registry.delete(el)
+  if (!container || !ro) return
+  for (const ent of registry.values()) if (ent.container === container) return
+  ro.unobserve(container)
+  observedContainers.delete(container)
 }
 
 let resizeRaf = 0
