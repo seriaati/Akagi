@@ -322,6 +322,8 @@
     "tenpai_draws_left": "剩餘摸牌",
     "tenpai_draws_ukeire": "進張",
     "tenpai_draws_approx": "估算（僅一向聽為精確值）",
+    "tenpai_waits": "待牌",
+    "tenpai_waits_discard": "切出後",
     "dora": "寶牌",
     "phase": "階段",
     "room": "房間",

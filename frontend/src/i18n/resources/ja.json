@@ -322,6 +322,8 @@
     "tenpai_draws_left": "残りツモ",
     "tenpai_draws_ukeire": "受け入れ",
     "tenpai_draws_approx": "概算（1向聴のみ厳密）",
+    "tenpai_waits": "待ち",
+    "tenpai_waits_discard": "打牌後",
     "dora": "ドラ",
     "phase": "フェーズ",
     "room": "卓",
