@@ -356,20 +356,22 @@ pub fn run() {
                     });
                 }
 
-                // Best-effort terminal ctrl_c → graceful capture shutdown.
-                // GUI close goes through Tauri's window event path, not
-                // here, so this only matters when the user runs Akagi
-                // headless from a terminal.
+                // Terminal ctrl_c → stop capture, then exit. Installing this
+                // handler replaces the default SIGINT action, so it must exit
+                // itself or ctrl_c does nothing. Capture is stopped first so
+                // the launched browser is terminated rather than orphaned;
+                // the wait covers its SIGTERM → SIGKILL grace (7s worst case).
                 let stop_state = state.clone();
+                let exit_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let _ = tokio::signal::ctrl_c().await;
-                    let stop = {
-                        let mut ctl = stop_state.capture_control.lock().await;
-                        ctl.stop.take()
-                    };
-                    if let Some(tx) = stop {
-                        let _ = tx.send(());
-                    }
+                    info!("ctrl_c received, shutting down");
+                    ipc::capture_supervisor::stop_and_wait(
+                        &stop_state,
+                        std::time::Duration::from_secs(8),
+                    )
+                    .await;
+                    exit_handle.exit(0);
                 });
 
                 Ok(())

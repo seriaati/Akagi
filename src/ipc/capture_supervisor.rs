@@ -33,8 +33,9 @@ fn schema_kind(k: RtCaptureKind) -> CaptureKind {
 
 /// Stop the running backend (if any) and wait briefly for the
 /// supervisor task to flip status to `Stopped` before returning. Used by
-/// `restart_capture` so the spawn that follows starts on a clean slate.
-async fn stop_and_wait(state: &AppState, max_wait: Duration) {
+/// `restart_capture` so the spawn that follows starts on a clean slate,
+/// and by the terminal ctrl_c handler so the browser is gone before exit.
+pub async fn stop_and_wait(state: &AppState, max_wait: Duration) {
     // Subscribe *before* signalling shutdown so we can't lose the
     // resulting status emission to a race.
     let mut rx = state.capture_status_bus.subscribe();
