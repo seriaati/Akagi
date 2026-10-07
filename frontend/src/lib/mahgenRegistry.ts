@@ -7,7 +7,7 @@
 export type MahgenKind =
   | 'river' | 'hand' | 'melds' | 'dora' | 'rec' | 'bot-action' | 'bot-show'
   | 'overlay-show'
-  | 'board-hand' | 'board-river' | 'board-meld' | 'hand-risk'
+  | 'board-hand' | 'board-river' | 'board-meld' | 'hand-risk' | 'opp-risk'
 
 type SizeCtx =
   | { mode: 'river'; maxScale?: number; minScale?: number }
@@ -63,6 +63,9 @@ const SIZE_CTX: Record<MahgenKind, SizeCtx> = {
   // strip wraps when the panel is narrow. Tuned for a ~13–14 tile hand; refine
   // visually in the webview.
   'hand-risk':   { mode: 'linear', base: 36, ref: 230, min: 26, max: 64 },
+  // opp-risk: likely-wait and safe-in-hand tiles in the OpponentsTile table.
+  // Fixed so every row stays the same height regardless of column width.
+  'opp-risk':    { mode: 'fixed', base: 28 },
 }
 
 const RIVER_FULL_ROW_W = 420
