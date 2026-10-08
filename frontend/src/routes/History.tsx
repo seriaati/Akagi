@@ -15,7 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -26,11 +25,13 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CumulativePtChart } from '@/components/history/CumulativePtChart'
+import { DateRangePicker } from '@/components/history/DateRangePicker'
 import { GameList } from '@/components/history/GameList'
 import { PtRuleSelector } from '@/components/history/PtRuleSelector'
 import { RankPieChart } from '@/components/history/RankPieChart'
 import { StatsTable } from '@/components/history/StatsTable'
 import { aggregateStats } from '@/lib/historyStats'
+import { cn } from '@/lib/utils'
 import { cumulativePtSeries, rankDistribution } from '@/lib/ptCalc'
 import { useHistoryStore } from '@/stores/historyStore'
 import type { GameRecord, KyokuMode, Platform } from '@/types'
@@ -203,33 +204,14 @@ function FilterCard({
             </Select>
           </Field>
 
-          <Field label={t('history.date_label')}>
-            <div className="flex gap-1">
-              <Input
-                type="date"
-                value={dateOnly(filter.started_after)}
-                onChange={(e) =>
-                  onChange({
-                    ...filter,
-                    started_after: e.target.value
-                      ? new Date(e.target.value).toISOString()
-                      : undefined,
-                  })
-                }
-              />
-              <Input
-                type="date"
-                value={dateOnly(filter.started_before)}
-                onChange={(e) =>
-                  onChange({
-                    ...filter,
-                    started_before: e.target.value
-                      ? new Date(e.target.value).toISOString()
-                      : undefined,
-                  })
-                }
-              />
-            </div>
+          <Field label={t('history.date_label')} className="md:col-span-2">
+            <DateRangePicker
+              after={filter.started_after}
+              before={filter.started_before}
+              onChange={(started_after, started_before) =>
+                onChange({ ...filter, started_after, started_before })
+              }
+            />
           </Field>
         </div>
       </CardContent>
@@ -237,18 +219,19 @@ function FilterCard({
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  className,
+  children,
+}: {
+  label: string
+  className?: string
+  children: React.ReactNode
+}) {
   return (
-    <div className="space-y-1">
+    <div className={cn('space-y-1', className)}>
       <Label className="text-xs">{label}</Label>
       {children}
     </div>
   )
-}
-
-function dateOnly(iso?: string): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.valueOf())) return ''
-  return d.toISOString().slice(0, 10)
 }
