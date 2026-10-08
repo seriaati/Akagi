@@ -12,26 +12,30 @@
 <p align="center">
   <i>「死ねば助かるのに………」 - 赤木しげる</i>
   <br/><br/>
-  面向 <b>雀魂</b>、<b>天凤</b> 以及更多平台的实时麻将 AI 辅助工具。<br/>
-  Akagi V3
+  专为 <b>雀魂</b>、<b>天凤</b> 等日麻平台打造的实时 AI 对局辅助系统。<br/>
+  Akagi V3：基于单可执行文件 Rust 与 Tauri 架构重构前作
+  <a href="https://github.com/shinkuan/Akagi/tree/v2">Akagi</a> 与
+  <a href="https://github.com/Xe-Persistent/Akagi-NG">AkagiNG</a>。
   <br/><br/>
-  <a href="https://discord.gg/Z2wjXUK8bN">在 Discord 上提问</a>
+  <b>本版本为 <a href="https://github.com/seriaati">seriaati</a> 维护的 Akagi 分支版本。</b>
+  原项目由 <a href="https://github.com/shinkuan">shinkuan</a> 开发：
+  <a href="https://github.com/shinkuan/Akagi">shinkuan/Akagi</a>。
+  各项功能扩展与改进详见 <a href="#分支特性与改进">分支特性与改进</a>。
+  <br/><br/>
+  <a href="https://github.com/seriaati/Akagi/issues">反馈 Bug</a>
   ·
-  <a href="https://github.com/shinkuan/Akagi/issues">报告 Bug</a>
+  <a href="https://github.com/seriaati/Akagi/issues">功能建议</a>
   ·
-  <a href="https://github.com/shinkuan/Akagi/issues">功能建议</a>
-  ·
-  <a href="https://deepwiki.com/shinkuan/Akagi">DeepWiki</a>
+  <a href="https://deepwiki.com/seriaati/Akagi">DeepWiki</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/shinkuan/Akagi/stargazers"><img src="https://img.shields.io/github/stars/shinkuan/Akagi?logo=github" alt="GitHub stars" /></a>
-  <a href="https://github.com/shinkuan/Akagi/releases"><img src="https://img.shields.io/github/v/release/shinkuan/Akagi?label=release&logo=github&include_prereleases" alt="Latest release" /></a>
-  <a href="https://github.com/shinkuan/Akagi/issues"><img src="https://img.shields.io/github/issues/shinkuan/Akagi?logo=github" alt="Open issues" /></a>
+  <a href="https://github.com/seriaati/Akagi/stargazers"><img src="https://img.shields.io/github/stars/seriaati/Akagi?logo=github" alt="GitHub stars" /></a>
+  <a href="https://github.com/seriaati/Akagi/releases"><img src="https://img.shields.io/github/v/release/seriaati/Akagi?label=release&logo=github&include_prereleases" alt="Latest release" /></a>
+  <a href="https://github.com/seriaati/Akagi/issues"><img src="https://img.shields.io/github/issues/seriaati/Akagi?logo=github" alt="Open issues" /></a>
   <a href="./LICENSE.txt"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?logo=apache" alt="License: Apache-2.0" /></a>
-  <a href="https://github.com/shinkuan/Akagi/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/shinkuan/Akagi/release.yml?branch=v3&logo=githubactions&label=build" alt="Build status" /></a>
-  <a href="https://discord.gg/Z2wjXUK8bN"><img src="https://img.shields.io/discord/1192792431364673577?label=discord&logo=discord&color=7289DA" alt="Discord" /></a>
-  <a href="https://deepwiki.com/shinkuan/Akagi"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
+  <a href="https://github.com/seriaati/Akagi/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/seriaati/Akagi/release.yml?branch=v3&logo=githubactions&label=build" alt="Build status" /></a>
+  <a href="https://deepwiki.com/seriaati/Akagi"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
 </p>
 
 <p align="center">
@@ -40,7 +44,7 @@
 
 <p align="center">
   <a href="https://github.com/shinkuan/Akagi/tree/v2"><img src="https://img.shields.io/badge/Akagi-v2_(Python)-blue?logo=github" alt="v2 branch" /></a>
-  <a href="https://github.com/shinkuan/Akagi/tree/ng"><img src="https://img.shields.io/badge/Akagi-NG_(Electron)-blue?logo=github" alt="NG branch" /></a>
+  <a href="https://github.com/Xe-Persistent/Akagi-NG"><img src="https://img.shields.io/badge/Akagi-NG_(Electron)-blue?logo=github" alt="NG branch" /></a>
 </p>
 
 <p align="center">
@@ -50,10 +54,6 @@
   ·
   <b>简体中文</b>
 </p>
-
----
-
-以下为AI机翻
 
 ## 简介
 
@@ -65,9 +65,36 @@
 Akagi 通过本机 Proxy 或内置浏览器监听你在雀魂 / 天凤的对局，
 镜像游戏状态，并在可拖拽的 HUD 中显示 **向听**、**听牌**、
 **和牌率**、**听牌率**、**对各家放铳风险**，以及
-**推荐切牌**。可执行文件本身就内置了一个AI模型 —— 无需安装任何东西 ——
+**推荐切牌**。可执行文件本身就内置了一个 AI 模型 —— 无需安装任何东西 ——
 它的建议会在每巡显示；若想要更强的托管模型，可以把它指向
 云端推理 API。
+
+## 分支特性与改进
+
+本项目为 [shinkuan/Akagi](https://github.com/shinkuan/Akagi)（`v3` 分支）的衍生分支，在此基础上进一步扩展了功能并修复了若干问题：
+
+### 新增功能
+
+- **雀魂自动连续开局（Auto-rematch）** — 托管对局结束后，自动确认结算弹窗“再来一局”并跳过结算奖励界面，实现全自动无缝连战。
+- **雀魂全装扮与角色本地解锁** — 可选的 Proxy 流量重写功能，可在本地客户端直接解锁全部角色、装扮与立直特效（纯本地视觉效果，默认关闭，需配合 Proxy 模式）。
+- **混合抓包模式（Hybrid Capture）** — 由 Akagi 启动的专属 Chromium 自动走内置 MITM Proxy 传输，既省去配置系统全局代理与安装根证书的繁琐，又能同时兼顾自动托管出牌与装扮解锁等 Proxy 增强功能。
+- **手牌深度进阶分析**
+  - **听牌巡目预测**：估算听牌所需摸牌巡目（中位数及 80% 累积概率），并计算流局前的预期听牌率。
+  - **待牌打点与役种明细**：实时列出各待牌荣和时的预估番种与打点，并在 HUD 新增听牌手牌打点看板。
+  - **各家动态推测**：分析各家对手可能的听牌待牌范围，并提供针对各家的现物与安牌推荐。
+- **丰富 HUD 磁贴面板** — 实时局况历史记录、听牌预估巡目（听牌后自动无缝切换为待牌一览）、顶部状态栏显示场况／顺位／剩余摸牌数，且各家面板直接展示对手与本家玩家昵称。
+- **Discord 状态展示（Rich Presence）** — 个人状态实时显示当前对局平台，并与界面语言保持同步。
+- **配置即时自动保存** — 所有设置修改随改随存，无需手动确认或保存。
+- **内置更新对齐** — 更新检测器直接对接本分支的最新 Release 版本。
+
+### 问题修复
+
+- **对局防卡死保护**：若 Bot 在对局途中意外崩溃，系统会自动切换至备用策略接管出牌，防止对局超时挂起。
+- **Linux 体验优化**：强制在 XWayland 下运行以确保 HUD 悬浮窗始终置顶；终端中按 Ctrl+C 可优雅退出程序。
+- **托管画面防闪烁**：改为捕获完整视口画面，彻底消除自动托管出牌时游戏窗口频繁闪烁的问题。
+- **掉线重连战绩留存**：网络断线重连后，仍完整保留当局此前各小局的对局历程。
+- **UI 提示与设置状态防抖**：解决配置自动保存引起的界面反复弹跳；常驻提示框（Toast）在流程结束后自动关闭，并去重配置通知。
+- **渲染性能优化与内存泄漏修复**：对麻将牌面渲染（mahgen）引入节流与缓存机制，大幅降低资源占用；修复 DOM Observer 与实时日志转发器的内存泄漏问题。
 
 ## 截图
 
@@ -77,11 +104,14 @@ https://github.com/user-attachments/assets/42812e85-ccf0-49fd-b825-adbb5b7b58b0
 
 https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 
+https://github.com/user-attachments/assets/d5bc6ff6-6560-4365-ae55-660c9a522790
+
 ---
 
 ## 目录
 
 **用户**
+- [分支特性与改进](#分支特性与改进)
 - [功能](#功能)
 - [支持的平台](#支持的平台)
 - [快速开始](#快速开始)
@@ -135,7 +165,8 @@ https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
   可在配置向导或设置即时切换。
 - **三麻** — 完整支持：AI分析、按模式 bot 路由、历史统计、3p uma 表。
 - **应用内更新** — 启动时自动检查新版本，也可在 *设置 → 更新*
-  手动检查；一键下载、原地更新并重新启动。
+  手动检查；一键下载、原地更新并重新启动。只读安装环境（如 AppImage）
+  会自动回退至 Releases 页面手动下载。
 
 ## 支持的平台
 
@@ -143,7 +174,7 @@ https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 |---|:---:|:---:|:---:|
 | **雀魂（Mahjong Soul / Majsoul）** | &check; | &check; | &check; |
 | **天凤（Tenhou）** | &check; | &check; | &check; |
-| **Riichi City** | &check; | &check; | &cross; |
+| **Riichi City** | &check; | &check; | &check; |
 | **Amatsuki** | （计划中） | （计划中） | &cross; |
 
 ---
@@ -152,12 +183,12 @@ https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 
 ### A. 安装官方 Release
 
-Akagi 以 portable zip 形式发布 — 每个平台一个自带所需文件的目录。
-从 [Releases](https://github.com/shinkuan/Akagi/releases) 下载
-对应操作系统的 zip,解压到任何你有写入权限的位置(例如
-`~/Apps/`、桌面),然后直接运行里面的`akagi`即可。配置文件、
-日志、对局历史、CA 证书以及 bot 都会建立在旁边,所以
-迁移 / 备份 / 卸载就是迁移 / 复制 / 删除整个目录。
+Akagi 提供免安装的便携版压缩包（Portable ZIP）— 针对不同操作系统提供开箱即用的独立目录。
+从 [Releases](https://github.com/seriaati/Akagi/releases) 下载
+对应操作系统的压缩包，解压至任何具备写入权限的目录（例如
+`~/Apps/` 或桌面），直接运行目录内的 `akagi` 即可。配置文件、日志、
+对局历史、CA 证书与 Bot 均保存在同一目录旁，无论迁移、
+备份或卸载，仅需移动、复制或删除该目录即可完成。
 
 | OS | 文件 | 备注 |
 |---|---|---|
@@ -224,11 +255,17 @@ Akagi 内置一个 **纯 Rust 的 bot**，它是两种模式的默认值（`bot.
 
 #### 获取云端推理密钥
 
-三种方式：
+提供两种途径：
 
-- **购买密钥** — 应用内购买。
-- **兑换码** — 把预付码换成密钥，或给你已持有的密钥加时间。
-- 到 [Discord 服务器](https://discord.gg/Z2wjXUK8bN) 询问。
+- **购买密钥** — 直接在应用内购买授权。
+- **兑换码** — 使用预付兑换码兑换新密钥，或为已有密钥延长有效期。
+
+#### 请求超时设置
+
+向云端服务器请求走子决策时设有 **请求超时限制**（默认为 **3000 ms**，可在云端推理设置中调整，设置范围 500～10000 ms）。若在时限内未能收到云端响应，该巡会自动切换由本地离线模型即刻接手，确保对局节奏流畅不挂起。
+- 若网络波动较大或服务器响应较慢，可适度调大该数值以增强容错。
+- 若希望减少等待、快速由本地模型兜底，可适度调小该数值。
+- **注意事项**：宣告立直在单巡内需要连续发起两次请求（宣告立直与切出立直牌），若超时时间设置过长，可能会面临超出游戏每巡出牌倒计时的风险。
 
 ### 按模式切换的 bot
 
@@ -365,22 +402,13 @@ minisign -Vm akagi-<version>-<platform>.zip -p minisign.pub
 - **MITM 模式下游戏卡在加载画面。** 多半是重定向工具把游戏的 loopback
   流量也送进了 proxy。在日志里找 `refusing CONNECT to loopback`，
   然后排除 `localhost`、`127.0.0.1`、`::1` — 见上方 MITM 设置第 4 步。
-- **Chromium 模式抓不到包。** Detect 没找到浏览器。
-  在设置或 `config.toml` 里手动设置
-  `capture.chromium.executable`。如果浏览器有启动但没
-  帧流入，检查 `--remote-debugging-port` 是否被其他
-  扩展拦截。
-- **Bot 对局途中崩溃。** Inspector 标签页可显示 bot 死前
-  看到的最后一帧；附在 bug 报告里。
-- **三麻挑了错的 bot。** 检查设置 → Bot 中的
-  `bot.active_3p` — 它与 `bot.active_4p` 互相独立。
-- **更新 / bot 安装 / Chrome 下载超时（中国大陆等）。**
-  参见[下载镜像](#下载镜像) — 把设置 → 下载调成「镜像优先」，
-  或在「自定义镜像前缀」里填一个你确认可用的加速站。
-- **去哪求助？** 聊天请到
-  [Discord](https://discord.gg/Z2wjXUK8bN)，
-  追踪型的 bug 与功能建议请到
-  [GitHub Issues](https://github.com/shinkuan/Akagi/issues)。
+- **Chromium 模式无法抓到包。** 自动检测未能找到可用浏览器。请在“设置”或 `config.toml` 中手动指定 `capture.chromium.executable` 的可执行文件路径。若浏览器能正常启动却无游戏数据帧流入，请检查 `--remote-debugging-port` 是否被其他浏览器扩展拦截或占用。
+- **Chromium 窗口未关闭时重启 Akagi。** 由于同一个用户配置文件（Profile）无法被多个进程并发占用，Akagi 会先尝试关闭已在运行的浏览器，并重新拉起干净的独立窗口。登录状态与会话完整保留，雀魂刷新后即可直接连回当局比赛。若残留浏览器无法自动关闭（报错「couldn't terminate the browser already using profile …」），请手动在任务管理器或终端中结束该浏览器进程，然后点击“Restart（重启）”。注意：不支持两个 Akagi 实例同时使用同一个 Profile。
+- **天凤对局中途掉线重连。** 天凤重连协议推送的是当前局面的即时快照（Snapshot）而非完整事件重放，因此 Akagi 无法推导还原断线当前小局的牌面进展。此时系统会弹出「rejoined mid-hand」通知，并暂停当前小局的分析与自动托管；待下一局开始后将自动恢复正常跟踪。通过该方式重连的对局不会写入“对局历史”，以防残缺数据影响整体战绩统计的客观性。
+- **Bot 在对局途中崩溃。** 在“Inspector”标签页中可查看 Bot 异常退出前接收到的最后一帧（Frame）；提交反馈时请随附该帧数据。
+- **三麻选用了错误的 Bot。** 请前往“设置 → Bot”检查 `bot.active_3p` 配置项 — 四麻与三麻的激活 Bot 相互独立。
+- **更新 / 安装 Bot / 下载 Chrome 超时（中国大陆等网络受限地区）。** 参见[下载镜像](#下载镜像) — 将“设置 → 下载”设为“镜像优先”，或在“自定义镜像前缀”中填入确认可用的加速镜像站。
+- **遇到问题如何获取帮助？** 请前往 [GitHub Issues](https://github.com/seriaati/Akagi/issues) 提交 Bug 反馈或新功能需求。
 
 ---
 
@@ -403,10 +431,9 @@ alpha.8 已完成：
 
 - [ ] **Amatsuki** 平台支持
 - [ ] **前端打磨** — 牌型布局、动画、无障碍
-- [ ] **天凤 autoplay**
 
 详细的 bug 跟踪请到
-[GitHub Issues](https://github.com/shinkuan/Akagi/issues)。
+[GitHub Issues](https://github.com/seriaati/Akagi/issues)。
 
 ---
 ---
@@ -633,8 +660,9 @@ portable zip:
 | `macos-14` | `aarch64-apple-darwin` | `akagi-<version>-macos-arm64.zip` |
 | `windows-latest` | `x86_64-pc-windows-msvc` | `akagi-<version>-windows-x64.zip` |
 
-每个 zip 都将 `python-build-standalone` 3.12 + `uv` 一并放在
-binary 旁边,bot 不需要额外安装系统 Python 即可运行。
+每个压缩包均在主程序旁随附 `python-build-standalone` 3.12 与 `uv`，各类插件 Bot 无需事先安装系统 Python 即可随开即用。
+
+项目管理员可在开启的 PR 下发表评论 `/build-artifacts`，触发针对该 PR 最新 commit 的构建。[`pr-build.yml`](./.github/workflows/pr-build.yml) 工作流在完成后会自动回复三大平台的便携版下载链接（产物保留 14 天）。非管理员留言将被自动忽略。
 
 发布 job 会用 [minisign](https://jedisct1.github.io/minisign/) 给
 release zip 签名（生成 `<asset>.zip.minisig`，trusted comment 为
@@ -680,10 +708,9 @@ Copyright 2026 Shinkuan。第三方致谢信息位于
 
 ## 鸣谢
 
-- [Akagi](https://github.com/shinkuan/Akagi)（Python，v2）与
-  [AkagiNG](https://github.com/shinkuan/AkagiNG)（Electron + Python） —
+- [Akagi](https://github.com/shinkuan/Akagi/tree/v2)（Python，v2）与
+  [AkagiNG](https://github.com/Xe-Persistent/Akagi-NG)（Electron + Python） —
   v3 所基于的前作。
 - [`mjai.app`](https://github.com/smly/mjai.app) 以及 Gimite
   制定的 mjai 规格 — 让可插拔 bot 成为可能的协议。
-- [Discord](https://discord.gg/Z2wjXUK8bN) 社区提供的 bug
-  报告、模型贡献与意见反馈。
+- 感谢上游 Akagi Discord 社区持续提供的 Bug 反馈、模型贡献与宝贵建议。
