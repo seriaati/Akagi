@@ -17,23 +17,25 @@
   <a href="https://github.com/shinkuan/Akagi/tree/v2">Akagi</a> and
   <a href="https://github.com/Xe-Persistent/Akagi-NG">AkagiNG</a>.
   <br/><br/>
-  <a href="https://discord.gg/Z2wjXUK8bN">Ask anything on Discord</a>
+  <b>This is <a href="https://github.com/seriaati">seriaati</a>'s fork of Akagi.</b>
+  The original project is by <a href="https://github.com/shinkuan">shinkuan</a>:
+  <a href="https://github.com/shinkuan/Akagi">shinkuan/Akagi</a>.
+  See <a href="#fork-differences">Fork Differences</a>.
+  <br/><br/>
+  <a href="https://github.com/seriaati/Akagi/issues">Report Bug</a>
   ·
-  <a href="https://github.com/shinkuan/Akagi/issues">Report Bug</a>
+  <a href="https://github.com/seriaati/Akagi/issues">Request Feature</a>
   ·
-  <a href="https://github.com/shinkuan/Akagi/issues">Request Feature</a>
-  ·
-  <a href="https://deepwiki.com/shinkuan/Akagi">DeepWiki</a>
+  <a href="https://deepwiki.com/seriaati/Akagi">DeepWiki</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/shinkuan/Akagi/stargazers"><img src="https://img.shields.io/github/stars/shinkuan/Akagi?logo=github" alt="GitHub stars" /></a>
-  <a href="https://github.com/shinkuan/Akagi/releases"><img src="https://img.shields.io/github/v/release/shinkuan/Akagi?label=release&logo=github&include_prereleases" alt="Latest release" /></a>
-  <a href="https://github.com/shinkuan/Akagi/issues"><img src="https://img.shields.io/github/issues/shinkuan/Akagi?logo=github" alt="Open issues" /></a>
+  <a href="https://github.com/seriaati/Akagi/stargazers"><img src="https://img.shields.io/github/stars/seriaati/Akagi?logo=github" alt="GitHub stars" /></a>
+  <a href="https://github.com/seriaati/Akagi/releases"><img src="https://img.shields.io/github/v/release/seriaati/Akagi?label=release&logo=github&include_prereleases" alt="Latest release" /></a>
+  <a href="https://github.com/seriaati/Akagi/issues"><img src="https://img.shields.io/github/issues/seriaati/Akagi?logo=github" alt="Open issues" /></a>
   <a href="./LICENSE.txt"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?logo=apache" alt="License: Apache-2.0" /></a>
-  <a href="https://github.com/shinkuan/Akagi/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/shinkuan/Akagi/release.yml?branch=v3&logo=githubactions&label=build" alt="Build status" /></a>
-  <a href="https://discord.gg/Z2wjXUK8bN"><img src="https://img.shields.io/discord/1192792431364673577?label=discord&logo=discord&color=7289DA" alt="Discord" /></a>
-  <a href="https://deepwiki.com/shinkuan/Akagi"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
+  <a href="https://github.com/seriaati/Akagi/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/seriaati/Akagi/release.yml?branch=v3&logo=githubactions&label=build" alt="Build status" /></a>
+  <a href="https://deepwiki.com/seriaati/Akagi"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
 </p>
 
 <p align="center">
@@ -72,6 +74,46 @@ built-in browser, mirrors the game state, and shows **shanten**, **waits**,
 the app — nothing to install — and its suggestion appears each turn; point
 it at the cloud inference API when you want a stronger, hosted model.
 
+## Fork Differences
+
+This fork tracks [shinkuan/Akagi](https://github.com/shinkuan/Akagi)
+(`v3`) and adds the following on top.
+
+### Features
+
+- **Majsoul auto-rematch** — autoplay confirms the 再來一場 prompt and
+  dismisses the reward screen so matches chain on their own.
+- **Majsoul cosmetic unlock** — optional proxy rewrite that unlocks all
+  cosmetics locally (client-side only; off by default, needs the proxy).
+- **Hybrid capture mode** — Akagi-launched Chromium routed through the
+  MITM proxy, so autoplay and proxy rewrites (e.g. cosmetic unlock) work
+  together without a system proxy or CA install.
+- **Extra hand analysis**
+  - Draws-to-tenpai estimate (median / 80% draws, chance of tenpai
+    before ryukyoku).
+  - Per-wait ron points and yaku, plus a tenpai hand value tile.
+  - Likely waits and safe tiles per opponent.
+- **More HUD tiles** — live round history, draws-to-tenpai (shows waits
+  once tenpai), room / placement / draws left in the header, and player
+  names on opponent and player tiles.
+- **Discord Rich Presence** — shows the platform as the activity name,
+  written in the UI language.
+- **Settings auto-save** — changes are saved as you make them.
+- **Updater** points at this fork's releases.
+
+### Bug fixes
+
+- Bot falls back to a stand-in when it fails mid-game instead of
+  stalling.
+- Linux: runs under XWayland so the overlay stays on top; Ctrl+C in the
+  terminal exits the app.
+- Autoplay captures the full viewport so the game window stops flashing.
+- Round history is kept across reconnects.
+- Settings auto-save no longer flip-flops; sticky toasts expire once
+  finalized; duplicate config toasts are deduped.
+- Throttled and cached mahgen tile renders, and fixed leaked mahgen
+  observers and live-tail log forwarders.
+
 ## Screenshots
 
 <img width="2559" height="1439" alt="image" src="https://github.com/user-attachments/assets/da9e7cce-d8ef-4e6e-807b-f6f54013cf22" />
@@ -87,6 +129,7 @@ https://github.com/user-attachments/assets/d5bc6ff6-6560-4365-ae55-660c9a522790
 ## Table of Contents
 
 **For users**
+- [Fork Differences](#fork-differences)
 - [Features](#features)
 - [Supported Platforms](#supported-platforms)
 - [Quick Start](#quick-start)
@@ -165,7 +208,7 @@ https://github.com/user-attachments/assets/d5bc6ff6-6560-4365-ae55-660c9a522790
 
 Akagi ships as a portable zip — one self-contained folder per platform.
 Download the file for your OS from
-[Releases](https://github.com/shinkuan/Akagi/releases), unzip anywhere
+[Releases](https://github.com/seriaati/Akagi/releases), unzip anywhere
 you have write permission (e.g. `~/Apps/`, Desktop), and run `akagi`
 inside. Configuration, logs, history, the CA cert, and bots are all
 created right next to it, so moving / backing up / uninstalling is just
@@ -239,12 +282,11 @@ the bot plays the local model's move so a live game never stalls.
 
 #### Getting a cloud-inference key
 
-Three ways:
+Two ways:
 
 - **Buy key** — an in-app purchase.
 - **Redeem code** — turn a prepaid code into a key, or add time to the key you
   already hold.
-- Ask in the [Discord server](https://discord.gg/Z2wjXUK8bN).
 
 #### Request timeout
 
@@ -386,9 +428,8 @@ Useful when debugging a bot or a bridge issue.
   bot saw before dying; attach it to the bug report.
 - **Wrong bot picked for a 3-player game.** Check `bot.active_3p` in
   Settings → Bot — it is independent of `bot.active_4p`.
-- **Where do I get help?** [Discord](https://discord.gg/Z2wjXUK8bN)
-  for chat, [GitHub Issues](https://github.com/shinkuan/Akagi/issues)
-  for tracked bugs and feature requests.
+- **Where do I get help?** [GitHub Issues](https://github.com/seriaati/Akagi/issues)
+  for bugs and feature requests.
 
 ---
 
@@ -414,7 +455,7 @@ Planned:
 - [ ] **Refine Frontend** — tile layout, animations, accessibility
 
 Detailed bug tracking lives in
-[GitHub Issues](https://github.com/shinkuan/Akagi/issues).
+[GitHub Issues](https://github.com/seriaati/Akagi/issues).
 
 ---
 ---
@@ -683,5 +724,5 @@ Apache-2.0 §4(d), redistributions must include both files.
 - [`mjai.app`](https://github.com/smly/mjai.app) and the mjai
   specification by Gimite — the protocol that makes pluggable bots
   possible.
-- The community on [Discord](https://discord.gg/Z2wjXUK8bN) for bug
+- The upstream Akagi community on Discord for bug
   reports, model contributions, and feedback.
