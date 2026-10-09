@@ -25,13 +25,18 @@
 //!   `NotifyAccountUpdate.update.character` and `.main_character` are
 //!   stripped. A character or skin change gets a synthesized one instead,
 //!   sent straight to the client, so it shows without re-entering a screen.
+//! - **Emotes.** With an unowned main character, the table's emote panel is
+//!   that character's, and the server refuses its emotes. Sending one is
+//!   rewritten into a `checkNetworkDelay` under the same index, and the
+//!   broadcast the server would have echoed is synthesized for our seat.
 //!
 //! ## Limits
 //!
 //! Display only: other players still see the account's real character and
-//! outfit, and nothing here touches gameplay frames. Unlocked emotes are
-//! deliberately left out — emotes are sent to the table, so using one the
-//! account does not own is visible to everyone.
+//! outfit, and nothing here touches gameplay frames. Emotes of an unowned
+//! main character are seen by this player alone. Unlocked extra emotes are
+//! deliberately left out — using one the account does not own on its real
+//! character would be visible to everyone.
 //!
 //! ## Declining
 //!
@@ -89,6 +94,8 @@ const CREATE_ROOM: &str = ".lq.Lobby.createRoom";
 const FETCH_ROOM: &str = ".lq.Lobby.fetchRoom";
 const JOIN_ROOM: &str = ".lq.Lobby.joinRoom";
 const AUTH_GAME: &str = ".lq.FastTest.authGame";
+const BROADCAST_IN_GAME: &str = ".lq.FastTest.broadcastInGame";
+const CHECK_NETWORK_DELAY: &str = ".lq.FastTest.checkNetworkDelay";
 const CHANGE_MAIN_CHARACTER: &str = ".lq.Lobby.changeMainCharacter";
 const CHANGE_CHARACTER_SKIN: &str = ".lq.Lobby.changeCharacterSkin";
 const UPDATE_CHARACTER_SORT: &str = ".lq.Lobby.updateCharacterSort";
@@ -101,6 +108,7 @@ const RECEIVE_CHARACTER_REWARDS: &str = ".lq.Lobby.receiveCharacterRewards";
 const ADD_FINISHED_ENDING: &str = ".lq.Lobby.addFinishedEnding";
 const SET_RANDOM_CHARACTER: &str = ".lq.Lobby.setRandomCharacter";
 const NOTIFY_ACCOUNT_UPDATE: &str = ".lq.NotifyAccountUpdate";
+const NOTIFY_GAME_BROADCAST: &str = ".lq.NotifyGameBroadcast";
 const NOTIFY_ROOM_PLAYER_UPDATE: &str = ".lq.NotifyRoomPlayerUpdate";
 const NOTIFY_GAME_FINISH_REWARD: &str = ".lq.NotifyGameFinishRewardV2";
 
@@ -156,6 +164,8 @@ struct Inner {
     real_view_index: Option<u32>,
     real_characters: HashMap<u32, DynamicMessage>,
     contract: String,
+    /// Our seat at the current table, from `authGame`.
+    seat: Option<u32>,
 }
 
 impl Unlock {
@@ -175,6 +185,7 @@ impl Unlock {
                 real_view_index: None,
                 real_characters: HashMap::new(),
                 contract: String::new(),
+                seat: None,
             }),
         }
     }
@@ -226,6 +237,21 @@ impl Inner {
                 self.saved.view_index = Some(get_u32(&req()?, "index"));
                 self.store.save(&self.saved);
                 return Ok(Outcome::forward());
+            }
+            BROADCAST_IN_GAME => {
+                let Some(echo) = self.local_emote(&req()?)? else {
+                    return Ok(Outcome::forward());
+                };
+                debug!("unlock: showing {method} locally");
+                let mut out = buf[..3].to_vec();
+                out.extend(parser::encode_wrapper(
+                    CHECK_NETWORK_DELAY,
+                    new_message("lq.ReqCommon")?.encode_to_vec(),
+                ));
+                return Ok(Outcome {
+                    verdict: Verdict::Replace(out),
+                    to_client: Some(echo),
+                });
             }
             CHANGE_MAIN_CHARACTER => {
                 self.saved.main_character = Some(get_u32(&req()?, "character_id"));
@@ -347,7 +373,13 @@ impl Inner {
                     self.patch_players(room, "persons")?;
                 }
             }
-            AUTH_GAME => self.patch_players(&mut msg, "players")?,
+            AUTH_GAME => {
+                self.seat = get_u32s(&msg, "seat_list")
+                    .iter()
+                    .position(|&id| id == self.account_id)
+                    .map(|i| i as u32);
+                self.patch_players(&mut msg, "players")?;
+            }
             SET_HIDDEN_CHARACTER => {
                 // The server answered the heartbeat, so the list it would
                 // have echoed back is missing.
@@ -500,6 +532,27 @@ impl Inner {
             notify.encode_to_vec(),
         ));
         Ok(out)
+    }
+
+    /// The server refuses an emote of a character the account does not own
+    /// (`ERR_CHARACTER_EMOJI_UNLOCK` — `emo_id` names the character), so
+    /// such an emote is shown at our own seat only. `None` sends it as is.
+    fn local_emote(&self, req: &DynamicMessage) -> Result<Option<Vec<u8>>> {
+        let (Some(seat), Some(main)) = (self.seat, self.saved.main_character) else {
+            return Ok(None);
+        };
+        if self.real_characters.contains_key(&main) {
+            return Ok(None);
+        }
+        let mut notify = new_message("lq.NotifyGameBroadcast")?;
+        notify.set_field_by_name("seat", Value::U32(seat));
+        notify.set_field_by_name("content", Value::String(get_str(req, "content")));
+        let mut out = vec![1];
+        out.extend(parser::encode_wrapper(
+            NOTIFY_GAME_BROADCAST,
+            notify.encode_to_vec(),
+        ));
+        Ok(Some(out))
     }
 
     /// `lq.Account`: the player's own profile.
@@ -1063,6 +1116,83 @@ mod tests {
             .as_message()
             .unwrap()
             .has_field_by_name("main_character"));
+    }
+
+    /// Logged in as account 7 owning only 200001, seated at seat 1.
+    fn seated(unlock: &Unlock, flow: &mut FlowState) {
+        login(unlock, flow);
+        exchange(
+            unlock,
+            flow,
+            2,
+            FETCH_CHARACTER_INFO,
+            json!({"characters": [{"charid": 200001}], "main_character_id": 200001}),
+        );
+        exchange(
+            unlock,
+            flow,
+            3,
+            AUTH_GAME,
+            json!({"seat_list": [8, 7, 9, 10], "players": [{"account_id": 7}]}),
+        );
+    }
+
+    #[test]
+    fn unowned_characters_emote_is_shown_at_our_seat_only() {
+        let unlock = unlock();
+        let mut flow = FlowState::default();
+        unlock.rewrite(
+            &mut flow,
+            &request(1, CHANGE_MAIN_CHARACTER, json!({"character_id": 20000112})),
+        );
+        seated(&unlock, &mut flow);
+
+        let content = r#"{"emo_id":1120000}"#;
+        let outcome = unlock.rewrite(
+            &mut flow,
+            &request(
+                9,
+                BROADCAST_IN_GAME,
+                json!({"content": content, "except_self": false}),
+            ),
+        );
+        let (name, echo) = decode_notify(
+            outcome
+                .to_client
+                .as_deref()
+                .expect("a synthesized broadcast"),
+        );
+        assert_eq!(name, NOTIFY_GAME_BROADCAST);
+        assert_eq!(get_u32(&echo, "seat"), 1);
+        assert_eq!(get_str(&echo, "content"), content);
+
+        let out = replaced(outcome);
+        assert_eq!(out[..3], [2, 9, 0]);
+        assert_eq!(
+            parser::decode_wrapper(&out[3..]).unwrap().name,
+            CHECK_NETWORK_DELAY
+        );
+    }
+
+    #[test]
+    fn owned_characters_emote_goes_to_the_table() {
+        let unlock = unlock();
+        let mut flow = FlowState::default();
+        unlock.rewrite(
+            &mut flow,
+            &request(1, CHANGE_MAIN_CHARACTER, json!({"character_id": 200001})),
+        );
+        seated(&unlock, &mut flow);
+        let outcome = unlock.rewrite(
+            &mut flow,
+            &request(
+                9,
+                BROADCAST_IN_GAME,
+                json!({"content": r#"{"emo_id":10003}"#}),
+            ),
+        );
+        assert!(matches!(outcome.verdict, Verdict::Forward));
+        assert!(outcome.to_client.is_none());
     }
 
     #[test]
