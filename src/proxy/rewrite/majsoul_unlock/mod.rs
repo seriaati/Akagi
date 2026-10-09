@@ -20,9 +20,11 @@
 //!   is exactly the success reply the client was waiting for — so neither
 //!   side sees a gap or an unanswered request.
 //! - **Notifies.** The server's own character updates would undo the above
-//!   mid-session, so `NotifyAccountUpdate.update.character` is stripped. A
-//!   skin change gets a synthesized one instead, sent straight to the
-//!   client, so the new skin shows without re-entering the screen.
+//!   mid-session — its `main_character` one, pushed as a match starts,
+//!   puts the real character back in the lobby — so
+//!   `NotifyAccountUpdate.update.character` and `.main_character` are
+//!   stripped. A character or skin change gets a synthesized one instead,
+//!   sent straight to the client, so it shows without re-entering a screen.
 //!
 //! ## Limits
 //!
@@ -227,12 +229,13 @@ impl Inner {
             }
             CHANGE_MAIN_CHARACTER => {
                 self.saved.main_character = Some(get_u32(&req()?, "character_id"));
+                to_client = Some(self.account_update(None)?);
             }
             CHANGE_CHARACTER_SKIN => {
                 let req = req()?;
                 let character = get_u32(&req, "character_id");
                 self.saved.skins.insert(character, get_u32(&req, "skin"));
-                to_client = Some(self.character_update(character)?);
+                to_client = Some(self.account_update(Some(character))?);
             }
             UPDATE_CHARACTER_SORT => {
                 self.saved.character_sort = Some(get_u32s(&req()?, "sort"));
@@ -376,10 +379,13 @@ impl Inner {
                 let Some(update) = child_mut(&mut msg, "update") else {
                     return Ok(Outcome::forward());
                 };
-                if !update.has_field_by_name("character") {
+                if !update.has_field_by_name("character")
+                    && !update.has_field_by_name("main_character")
+                {
                     return Ok(Outcome::forward());
                 }
                 update.clear_field_by_name("character");
+                update.clear_field_by_name("main_character");
                 // The rest of an update (currency, tasks, …) is real and
                 // still has to arrive.
                 if update.fields().next().is_none() && update.unknown_fields().next().is_none() {
@@ -464,15 +470,28 @@ impl Inner {
         )
     }
 
-    /// `NotifyAccountUpdate` carrying one character, for a skin change.
-    fn character_update(&self, character: u32) -> Result<Vec<u8>> {
-        let mut char_update = new_message("lq.AccountUpdate.CharacterUpdate")?;
-        char_update.set_field_by_name(
-            "characters",
-            Value::List(vec![Value::Message(self.perfect_character(character)?)]),
-        );
+    /// `NotifyAccountUpdate` for a change answered locally: `character`'s
+    /// new look, plus the main character whenever it is the one that
+    /// changed — as the server's own update would carry.
+    fn account_update(&self, character: Option<u32>) -> Result<Vec<u8>> {
         let mut update = new_message("lq.AccountUpdate")?;
-        update.set_field_by_name("character", Value::Message(char_update));
+        if let Some(character) = character {
+            let mut char_update = new_message("lq.AccountUpdate.CharacterUpdate")?;
+            char_update.set_field_by_name(
+                "characters",
+                Value::List(vec![Value::Message(self.perfect_character(character)?)]),
+            );
+            update.set_field_by_name("character", Value::Message(char_update));
+        }
+        if let Some(main) = self
+            .main_character()
+            .filter(|&main| character.is_none_or(|c| c == main))
+        {
+            let mut main_update = new_message("lq.AccountUpdate.MainCharacterUpdate")?;
+            main_update.set_field_by_name("character_id", Value::U32(main));
+            main_update.set_field_by_name("skin_id", Value::U32(self.skin_of(main)));
+            update.set_field_by_name("main_character", Value::Message(main_update));
+        }
         let mut notify = new_message("lq.NotifyAccountUpdate")?;
         notify.set_field_by_name("update", Value::Message(update));
         let mut out = vec![1];
@@ -973,13 +992,89 @@ mod tests {
         assert_eq!(chars, vec![(200001, 400105)]);
     }
 
+    /// A synthesized frame for the client: its notify name and message.
+    fn decode_notify(frame: &[u8]) -> (String, DynamicMessage) {
+        assert_eq!(frame[0], 1);
+        let wrapper = parser::decode_wrapper(&frame[1..]).unwrap();
+        let msg = DynamicMessage::decode(
+            parser::lookup_notify_type(&wrapper.name).unwrap(),
+            wrapper.data.as_slice(),
+        )
+        .unwrap();
+        (wrapper.name, msg)
+    }
+
+    #[test]
+    fn main_character_change_is_shown_to_the_client_at_once() {
+        let unlock = unlock();
+        let mut flow = FlowState::default();
+        unlock.rewrite(
+            &mut flow,
+            &request(
+                1,
+                CHANGE_CHARACTER_SKIN,
+                json!({"character_id": 200002, "skin": 400203}),
+            ),
+        );
+        let outcome = unlock.rewrite(
+            &mut flow,
+            &request(2, CHANGE_MAIN_CHARACTER, json!({"character_id": 200002})),
+        );
+        let (name, notify) = decode_notify(&outcome.to_client.expect("a synthesized notify"));
+        assert_eq!(name, NOTIFY_ACCOUNT_UPDATE);
+        let update = notify.get_field_by_name("update").unwrap();
+        let update = update.as_message().unwrap();
+        assert!(!update.has_field_by_name("character"));
+        let main = update.get_field_by_name("main_character").unwrap();
+        let main = main.as_message().unwrap();
+        assert_eq!(get_u32(main, "character_id"), 200002);
+        assert_eq!(get_u32(main, "skin_id"), 400203);
+
+        // A skin change of the main character moves it too; of another
+        // character, it does not.
+        let outcome = unlock.rewrite(
+            &mut flow,
+            &request(
+                3,
+                CHANGE_CHARACTER_SKIN,
+                json!({"character_id": 200002, "skin": 400204}),
+            ),
+        );
+        let (_, notify) = decode_notify(&outcome.to_client.unwrap());
+        let update = notify.get_field_by_name("update").unwrap();
+        let main = update
+            .as_message()
+            .unwrap()
+            .get_field_by_name("main_character")
+            .unwrap();
+        assert_eq!(get_u32(main.as_message().unwrap(), "skin_id"), 400204);
+
+        let outcome = unlock.rewrite(
+            &mut flow,
+            &request(
+                4,
+                CHANGE_CHARACTER_SKIN,
+                json!({"character_id": 200001, "skin": 400105}),
+            ),
+        );
+        let (_, notify) = decode_notify(&outcome.to_client.unwrap());
+        let update = notify.get_field_by_name("update").unwrap();
+        assert!(!update
+            .as_message()
+            .unwrap()
+            .has_field_by_name("main_character"));
+    }
+
     #[test]
     fn server_character_updates_are_stripped() {
         let unlock = unlock();
         let mut flow = FlowState::default();
         let only_character = notify(
             NOTIFY_ACCOUNT_UPDATE,
-            json!({"update": {"character": {"skins": [400102]}}}),
+            json!({"update": {
+                "character": {"skins": [400102]},
+                "main_character": {"character_id": 200001, "skin_id": 400101},
+            }}),
         );
         assert!(matches!(
             unlock.rewrite(&mut flow, &only_character).verdict,
