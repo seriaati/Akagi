@@ -12,6 +12,12 @@ use chromiumoxide::layout::Point;
 use chromiumoxide::page::Page;
 use std::time::Duration;
 
+/// `base` plus up to `jitter` ms drawn at random. Never below `base`, so a
+/// configured hover or hold stays the floor the client needs.
+pub fn jittered_ms(base: u32, jitter: u32) -> u32 {
+    base.saturating_add(rand::random_range(0..=jitter))
+}
+
 /// Dispatch a single mouse click at `(x, y)` (CSS pixels) as four CDP
 /// events, with mandatory hover before press:
 ///
@@ -372,5 +378,14 @@ mod tests {
     fn selector_is_escaped_into_the_expression() {
         let literal = serde_json::to_string(r#"button.s7[name="c22-4"]"#).unwrap();
         assert!(literal.contains(r#"\"c22-4\""#));
+    }
+
+    #[test]
+    fn jittered_ms_never_drops_below_base() {
+        for _ in 0..1000 {
+            let ms = jittered_ms(200, 60);
+            assert!((200..=260).contains(&ms));
+        }
+        assert_eq!(jittered_ms(200, 0), 200);
     }
 }

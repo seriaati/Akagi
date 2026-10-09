@@ -19,6 +19,7 @@
 //! `None` and the manager skips the click.
 
 use chromiumoxide::page::Page;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -55,6 +56,11 @@ impl AutoplayContext {
     }
 }
 
+/// Ceiling on [`CanvasRect::pixel_jittered`]'s offset, in 16:9 grid units.
+/// A hand tile is ~0.79 wide, and the result-screen 確認 is the shortest
+/// target at a little over 0.4 tall, so 0.2 cannot leave either.
+pub const MAX_CLICK_JITTER: f64 = 0.2;
+
 /// CSS-pixel bounding rect for the game canvas, as reported by
 /// `Element.getBoundingClientRect()`. `(x, y)` is the top-left of the
 /// canvas relative to the viewport.
@@ -74,6 +80,24 @@ impl CanvasRect {
             self.x + (x_norm / 16.0) * self.width,
             self.y + (y_norm / 9.0) * self.height,
         )
+    }
+
+    /// [`Self::pixel`], moved up to `jitter` grid units along each axis
+    /// (clamped to [`MAX_CLICK_JITTER`]). Each offset is the sum of two
+    /// uniform draws, so it peaks at the centre the way aimed presses do
+    /// rather than spreading evenly out to the edge.
+    pub fn pixel_jittered(
+        &self,
+        x_norm: f64,
+        y_norm: f64,
+        jitter: f64,
+        rng: &mut impl Rng,
+    ) -> (f64, f64) {
+        let r = jitter.clamp(0.0, MAX_CLICK_JITTER);
+        let mut offset = || (rng.random::<f64>() + rng.random::<f64>() - 1.0) * r;
+        let dx = offset();
+        let dy = offset();
+        self.pixel(x_norm + dx, y_norm + dy)
     }
 
     /// Sanity check for a normalised point — clamps off-canvas requests
@@ -109,6 +133,43 @@ mod tests {
         let (px, py) = rect.pixel(8.0, 4.5);
         assert!((px - (100.0 + 640.0)).abs() < 1e-9);
         assert!((py - (50.0 + 360.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn jittered_pixel_stays_within_clamped_radius() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+        let rect = CanvasRect {
+            x: 0.0,
+            y: 0.0,
+            width: 1600.0,
+            height: 900.0,
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+        // 100px per grid unit on both axes at this size.
+        let max_px = MAX_CLICK_JITTER * 100.0;
+        let mut moved = false;
+        for _ in 0..1000 {
+            let (px, py) = rect.pixel_jittered(8.0, 4.5, 5.0, &mut rng);
+            assert!((px - 800.0).abs() <= max_px + 1e-9);
+            assert!((py - 450.0).abs() <= max_px + 1e-9);
+            moved |= (px, py) != (800.0, 450.0);
+        }
+        assert!(moved);
+    }
+
+    #[test]
+    fn zero_jitter_is_exact() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+        let rect = CanvasRect {
+            x: 0.0,
+            y: 0.0,
+            width: 1600.0,
+            height: 900.0,
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+        assert_eq!(rect.pixel_jittered(8.0, 4.5, 0.0, &mut rng), (800.0, 450.0));
     }
 
     #[test]

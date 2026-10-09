@@ -256,7 +256,9 @@ fn push_pre_delay(
     extra_clicks: u32,
 ) {
     let cfg = ctx.cfg;
-    let per_click = cfg.hover_delay_ms + cfg.click_hold_ms;
+    // Timing jitter adds a uniform 0..=j to the hover and to the hold,
+    // so j per press on average.
+    let per_click = cfg.hover_delay_ms + cfg.click_hold_ms + cfg.click_timing_jitter_ms;
     let click_overhead_ms = per_click + extra_clicks * (per_click + cfg.inter_click_delay_ms);
 
     let opening_animation = match kind {
@@ -754,6 +756,8 @@ mod tests {
             inter_click_delay_ms: 0,
             hover_delay_ms: 0,
             click_hold_ms: 0,
+            click_jitter: 0.0,
+            click_timing_jitter_ms: 0,
             verify_input_ms: 0,
             click_retries: 0,
             reload_after_failures: 0,

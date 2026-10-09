@@ -40,7 +40,9 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::autoplay::cdp_input::{capture_viewport, dispatch_click, evaluate_canvas_rect, Frame};
+use crate::autoplay::cdp_input::{
+    capture_viewport, dispatch_click, evaluate_canvas_rect, jittered_ms, Frame,
+};
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
 use crate::config::{AppConfig, Platform};
 use crate::event_bus::MjaiBus;
@@ -271,14 +273,16 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
             }
         };
 
-        let (hover, hold) = {
+        let (hover, hold, jitter) = {
             let guard = cfg.read().await;
+            let m = &guard.autoplay.majsoul;
             (
-                guard.autoplay.majsoul.hover_delay_ms,
-                guard.autoplay.majsoul.click_hold_ms,
+                jittered_ms(m.hover_delay_ms, m.click_timing_jitter_ms),
+                jittered_ms(m.click_hold_ms, m.click_timing_jitter_ms),
+                m.click_jitter,
             )
         };
-        let (x, y) = rect.pixel(target.0, target.1);
+        let (x, y) = rect.pixel_jittered(target.0, target.1, jitter, &mut rand::rng());
         info!("auto-rematch: pressing {label}");
         if let Err(e) = dispatch_click(&page, x, y, hover, hold).await {
             warn!("auto-rematch: {label} press failed: {e:#}");

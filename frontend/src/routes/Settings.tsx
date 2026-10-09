@@ -873,6 +873,8 @@ function AutoplayCard({
       inter_click_delay_ms: 300,
       hover_delay_ms: 150,
       click_hold_ms: 50,
+      click_jitter: 0.12,
+      click_timing_jitter_ms: 60,
       verify_input_ms: 300,
       click_retries: 2,
       reload_after_failures: 3,
@@ -1081,6 +1083,40 @@ function AutoplayCard({
             onChange={(e) =>
               setMajsoulField({
                 click_hold_ms: Number(e.target.value || 0),
+              })
+            }
+          />
+        </Field>
+        <Field
+          label={t('settings.autoplay.click_jitter')}
+          hint={t('settings.autoplay.click_jitter_hint')}
+        >
+          <Input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={0.2}
+            step={0.01}
+            value={ap.majsoul.click_jitter ?? 0}
+            onChange={(e) =>
+              setMajsoulField({
+                click_jitter: Math.min(0.2, Math.max(0, Number(e.target.value || 0))),
+              })
+            }
+          />
+        </Field>
+        <Field
+          label={t('settings.autoplay.click_timing_jitter')}
+          hint={t('settings.autoplay.click_timing_jitter_hint')}
+        >
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={ap.majsoul.click_timing_jitter_ms ?? 0}
+            onChange={(e) =>
+              setMajsoulField({
+                click_timing_jitter_ms: Math.max(0, Number(e.target.value || 0)),
               })
             }
           />

@@ -103,6 +103,12 @@ export type MajsoulAutoplayConfig = {
   inter_click_delay_ms: number
   hover_delay_ms: number
   click_hold_ms: number
+  /** Largest random offset of a press from its target's centre, in 16:9
+   *  grid units (1 = 1/16 of the canvas width); clamped to 0.2, 0 = off. */
+  click_jitter: number
+  /** Up to this many ms added at random to each press's hover and hold;
+   *  0 = off. */
+  click_timing_jitter_ms: number
   /** Wait this long for the client's own input command after a click
    *  before pressing again; 0 disables verification. */
   verify_input_ms: number

@@ -13,7 +13,7 @@
 //! manager logs a warning and skips the click. The bot pipeline is
 //! untouched; the user can still play the round manually.
 
-use crate::autoplay::cdp_input::{dispatch_click_shaped, evaluate_canvas_rect};
+use crate::autoplay::cdp_input::{dispatch_click_shaped, evaluate_canvas_rect, jittered_ms};
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
 use crate::autoplay::inject::InjectFrame;
 use crate::autoplay::majsoul::MajsoulAutoplay;
@@ -464,7 +464,8 @@ impl AutoplayManager {
                             }
                         }
                     }
-                    let (px, py) = rect.pixel(*x_norm, *y_norm);
+                    let (px, py) =
+                        rect.pixel_jittered(*x_norm, *y_norm, cfg.click_jitter, &mut rand::rng());
                     if !rect.contains(px, py) {
                         warn!(
                             "autoplay: click ({px},{py}) outside canvas rect {:?}; skipping",
@@ -490,8 +491,8 @@ impl AutoplayManager {
                         page,
                         px,
                         py,
-                        cfg.hover_delay_ms,
-                        cfg.click_hold_ms,
+                        jittered_ms(cfg.hover_delay_ms, cfg.click_timing_jitter_ms),
+                        jittered_ms(cfg.click_hold_ms, cfg.click_timing_jitter_ms),
                         declares_reach,
                     )
                     .await
@@ -771,7 +772,8 @@ impl AutoplayManager {
                     tokio::time::sleep(Duration::from_millis(u64::from(cfg.inter_click_delay_ms)))
                         .await;
                 }
-                let (px, py) = rect.pixel(*x_norm, *y_norm);
+                let (px, py) =
+                    rect.pixel_jittered(*x_norm, *y_norm, cfg.click_jitter, &mut rand::rng());
                 if !rect.contains(px, py) {
                     warn!(
                         "autoplay: retry click ({px},{py}) outside canvas rect {:?}; skipping",
@@ -784,8 +786,15 @@ impl AutoplayManager {
                     warn!("autoplay: no page handle — abandoning retry for {action:?}");
                     return false;
                 };
-                if let Err(e) =
-                    dispatch_click_shaped(page, px, py, cfg.hover_delay_ms, hold, jiggle).await
+                if let Err(e) = dispatch_click_shaped(
+                    page,
+                    px,
+                    py,
+                    jittered_ms(cfg.hover_delay_ms, cfg.click_timing_jitter_ms),
+                    jittered_ms(hold, cfg.click_timing_jitter_ms),
+                    jiggle,
+                )
+                .await
                 {
                     warn!("autoplay: retry dispatch_click failed: {e:#}");
                 }

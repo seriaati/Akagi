@@ -52,6 +52,8 @@ function makeConfig(over: {
         inter_click_delay_ms: 0,
         hover_delay_ms: 0,
         click_hold_ms: 0,
+        click_jitter: 0,
+        click_timing_jitter_ms: 0,
         verify_input_ms: 0,
         click_retries: 0,
         reload_after_failures: 0,

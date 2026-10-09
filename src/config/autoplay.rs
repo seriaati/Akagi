@@ -179,6 +179,17 @@ pub struct MajsoulAutoplayConfig {
     /// mouseReleased. Non-zero so the engine doesn't collapse the pair
     /// into a single frame.
     pub click_hold_ms: u32,
+    /// Largest offset of a press from its target's centre, in the 16:9
+    /// grid the coordinate tables use (1.0 = 1/16 of the canvas width).
+    /// Each press draws a fresh offset per axis, weighted towards the
+    /// centre, so repeated presses on one slot do not share a pixel.
+    /// Clamped to `autoplay::context::MAX_CLICK_JITTER`, which keeps a
+    /// press on a hand tile off its neighbours. `0` disables it.
+    pub click_jitter: f64,
+    /// Up to this many ms, drawn per press, are added to the hover and
+    /// to the hold. Only ever added, so the configured values stay the
+    /// floors the client needs to register a press. `0` disables it.
+    pub click_timing_jitter_ms: u32,
     /// How long to wait for the client's own uplink command
     /// (`inputOperation` / `inputChiPengGang`) after a click sequence
     /// before treating the click as swallowed and pressing again, ms.
@@ -229,6 +240,8 @@ impl Default for MajsoulAutoplayConfig {
             inter_click_delay_ms: 300,
             hover_delay_ms: 200,
             click_hold_ms: 100,
+            click_jitter: 0.12,
+            click_timing_jitter_ms: 60,
             verify_input_ms: 300,
             click_retries: 2,
             reload_after_failures: 3,
