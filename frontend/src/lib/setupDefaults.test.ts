@@ -54,6 +54,7 @@ function makeConfig(over: {
         click_hold_ms: 0,
         click_jitter: 0,
         click_timing_jitter_ms: 0,
+        cursor_glide: false,
         verify_input_ms: 0,
         click_retries: 0,
         reload_after_failures: 0,

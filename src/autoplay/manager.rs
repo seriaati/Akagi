@@ -494,6 +494,7 @@ impl AutoplayManager {
                         jittered_ms(cfg.hover_delay_ms, cfg.click_timing_jitter_ms),
                         jittered_ms(cfg.click_hold_ms, cfg.click_timing_jitter_ms),
                         declares_reach,
+                        cfg.cursor_glide,
                     )
                     .await
                     {
@@ -793,6 +794,7 @@ impl AutoplayManager {
                     jittered_ms(cfg.hover_delay_ms, cfg.click_timing_jitter_ms),
                     jittered_ms(hold, cfg.click_timing_jitter_ms),
                     jiggle,
+                    cfg.cursor_glide,
                 )
                 .await
                 {

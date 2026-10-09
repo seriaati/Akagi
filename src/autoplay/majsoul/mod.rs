@@ -257,8 +257,14 @@ fn push_pre_delay(
 ) {
     let cfg = ctx.cfg;
     // Timing jitter adds a uniform 0..=j to the hover and to the hold,
-    // so j per press on average.
-    let per_click = cfg.hover_delay_ms + cfg.click_hold_ms + cfg.click_timing_jitter_ms;
+    // so j per press on average; a glide's length depends on where the
+    // cursor was, so only its typical duration can be reserved.
+    let glide_ms = if cfg.cursor_glide {
+        crate::autoplay::cdp_input::CURSOR_PATH_ESTIMATE_MS
+    } else {
+        0
+    };
+    let per_click = cfg.hover_delay_ms + cfg.click_hold_ms + cfg.click_timing_jitter_ms + glide_ms;
     let click_overhead_ms = per_click + extra_clicks * (per_click + cfg.inter_click_delay_ms);
 
     let opening_animation = match kind {
@@ -758,6 +764,7 @@ mod tests {
             click_hold_ms: 0,
             click_jitter: 0.0,
             click_timing_jitter_ms: 0,
+            cursor_glide: false,
             verify_input_ms: 0,
             click_retries: 0,
             reload_after_failures: 0,

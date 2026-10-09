@@ -109,6 +109,9 @@ export type MajsoulAutoplayConfig = {
   /** Up to this many ms added at random to each press's hover and hold;
    *  0 = off. */
   click_timing_jitter_ms: number
+  /** Glide the cursor to each press along a curved path instead of
+   *  jumping there. */
+  cursor_glide: boolean
   /** Wait this long for the client's own input command after a click
    *  before pressing again; 0 disables verification. */
   verify_input_ms: number

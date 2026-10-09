@@ -875,6 +875,7 @@ function AutoplayCard({
       click_hold_ms: 50,
       click_jitter: 0.12,
       click_timing_jitter_ms: 60,
+      cursor_glide: true,
       verify_input_ms: 300,
       click_retries: 2,
       reload_after_failures: 3,
@@ -1121,6 +1122,14 @@ function AutoplayCard({
             }
           />
         </Field>
+        <Toggle
+          label={t('settings.autoplay.cursor_glide')}
+          value={ap.majsoul.cursor_glide ?? false}
+          onChange={(v) => setMajsoulField({ cursor_glide: v })}
+        />
+        <p className="text-xs text-muted-foreground">
+          {t('settings.autoplay.cursor_glide_help')}
+        </p>
         <Field
           label={t('settings.autoplay.verify_input')}
           hint={t('settings.autoplay.verify_input_hint')}

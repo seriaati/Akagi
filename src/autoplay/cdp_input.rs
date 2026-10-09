@@ -10,7 +10,21 @@ use chromiumoxide::cdp::browser_protocol::input::{
 };
 use chromiumoxide::layout::Point;
 use chromiumoxide::page::Page;
+use rand::Rng;
+use std::sync::Mutex;
 use std::time::Duration;
+
+/// Where the last press left the cursor, in CSS pixels. CDP cannot be
+/// asked where the pointer is, so the path to the next press starts from
+/// here. `None` until the first press, which therefore arrives directly.
+static LAST_CURSOR: Mutex<Option<(f64, f64)>> = Mutex::new(None);
+
+/// Rough mean duration of [`cursor_path`]'s glide between the targets a
+/// game presses, for the delay model's click-overhead estimate.
+pub const CURSOR_PATH_ESTIMATE_MS: u32 = 250;
+
+/// Interval between the `mouseMoved` events of a glide — about one frame.
+const PATH_STEP_MS: f64 = 16.0;
 
 /// `base` plus up to `jitter` ms drawn at random. Never below `base`, so a
 /// configured hover or hold stays the floor the client needs.
@@ -18,10 +32,75 @@ pub fn jittered_ms(base: u32, jitter: u32) -> u32 {
     base.saturating_add(rand::random_range(0..=jitter))
 }
 
+/// The points a glide from `from` to `to` passes through, one per
+/// [`PATH_STEP_MS`], ending exactly on `to` (`from` itself is left out).
+///
+/// The path is a cubic Bézier whose two control points sit off the
+/// straight line on the same side, so it bows into an arc rather than
+/// wobbling; the bow's size and side are drawn per glide. Progress along
+/// it follows the minimum-jerk profile — slow start, fast middle, slow
+/// arrival — which is how aimed hand movements are timed. Duration grows
+/// with distance after Fitts' law, ±15%.
+fn cursor_path(from: (f64, f64), to: (f64, f64), rng: &mut impl Rng) -> Vec<(f64, f64)> {
+    let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+    let dist = dx.hypot(dy);
+    if dist < 2.0 {
+        return vec![to];
+    }
+    let duration_ms = (80.0 + 70.0 * (dist / 40.0 + 1.0).log2()) * rng.random_range(0.85..1.15);
+    let steps = ((duration_ms / PATH_STEP_MS).round() as usize).max(2);
+
+    // Unit normal to the straight line; scaling it by `dist` keeps the bow
+    // proportional to the move.
+    let (nx, ny) = (-dy / dist, dx / dist);
+    let side = if rng.random::<bool>() { 1.0 } else { -1.0 };
+    let bow1 = side * rng.random_range(0.03..0.2) * dist;
+    let bow2 = side * rng.random_range(0.03..0.2) * dist;
+    let c1 = (from.0 + dx * 0.3 + nx * bow1, from.1 + dy * 0.3 + ny * bow1);
+    let c2 = (from.0 + dx * 0.7 + nx * bow2, from.1 + dy * 0.7 + ny * bow2);
+
+    (1..=steps)
+        .map(|i| {
+            if i == steps {
+                return to;
+            }
+            let t = i as f64 / steps as f64;
+            let s = t * t * t * (10.0 - 15.0 * t + 6.0 * t * t);
+            let u = 1.0 - s;
+            let b = |p0: f64, p1: f64, p2: f64, p3: f64| {
+                u * u * u * p0 + 3.0 * u * u * s * p1 + 3.0 * u * s * s * p2 + s * s * s * p3
+            };
+            (b(from.0, c1.0, c2.0, to.0), b(from.1, c1.1, c2.1, to.1))
+        })
+        .collect()
+}
+
+/// Bring the cursor to `pt`: along [`cursor_path`] from where the last
+/// press left it when `glide` is set, otherwise (or with no last press)
+/// in one move.
+async fn move_cursor_to(page: &Page, pt: Point, glide: bool) -> Result<()> {
+    let from = *LAST_CURSOR.lock().unwrap_or_else(|e| e.into_inner());
+    let path = match from {
+        Some(from) if glide => cursor_path(from, (pt.x, pt.y), &mut rand::rng()),
+        _ => vec![(pt.x, pt.y)],
+    };
+    let last = path.len() - 1;
+    for (i, (x, y)) in path.into_iter().enumerate() {
+        page.move_mouse(Point::new(x, y))
+            .await
+            .context("CDP move_mouse")?;
+        if i < last {
+            tokio::time::sleep(Duration::from_millis(PATH_STEP_MS as u64)).await;
+        }
+    }
+    Ok(())
+}
+
 /// Dispatch a single mouse click at `(x, y)` (CSS pixels) as four CDP
 /// events, with mandatory hover before press:
 ///
-/// 1. `mouseMoved` to `(x, y)`
+/// 1. `mouseMoved` to `(x, y)` — a glide of several when `glide` is set
+///    (see [`cursor_path`])
 /// 2. sleep `hover_delay_ms` (≥100ms — Laya's input system samples hover
 ///    state before mousedown registers a hit on a tile sprite)
 /// 3. `mousePressed`
@@ -37,8 +116,9 @@ pub async fn dispatch_click(
     y: f64,
     hover_delay_ms: u32,
     click_hold_ms: u32,
+    glide: bool,
 ) -> Result<()> {
-    dispatch_click_shaped(page, x, y, hover_delay_ms, click_hold_ms, false).await
+    dispatch_click_shaped(page, x, y, hover_delay_ms, click_hold_ms, false, glide).await
 }
 
 /// As [`dispatch_click`], but able to vary the *shape* of the press.
@@ -54,9 +134,11 @@ pub async fn dispatch_click_shaped(
     hover_delay_ms: u32,
     click_hold_ms: u32,
     jiggle: bool,
+    glide: bool,
 ) -> Result<()> {
     let pt = Point::new(x, y);
-    page.move_mouse(pt).await.context("CDP move_mouse")?;
+    move_cursor_to(page, pt, glide).await?;
+    *LAST_CURSOR.lock().unwrap_or_else(|e| e.into_inner()) = Some((x, y));
     if hover_delay_ms > 0 {
         tokio::time::sleep(Duration::from_millis(hover_delay_ms as u64)).await;
     }
@@ -387,5 +469,34 @@ mod tests {
             assert!((200..=260).contains(&ms));
         }
         assert_eq!(jittered_ms(200, 0), 200);
+    }
+
+    #[test]
+    fn cursor_path_ends_on_target_and_stays_near_the_line() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+        let mut rng = StdRng::seed_from_u64(7);
+        let (from, to) = ((100.0, 800.0), (900.0, 300.0));
+        let dist = (800.0f64).hypot(500.0);
+        for _ in 0..200 {
+            let path = cursor_path(from, to, &mut rng);
+            assert!(path.len() >= 2);
+            assert_eq!(*path.last().unwrap(), to);
+            // Control points sit at most 0.2·dist off the line, and a
+            // Bézier stays inside their hull.
+            for &(x, y) in &path {
+                let off = ((x - from.0) * -500.0 - (y - from.1) * 800.0).abs() / dist;
+                assert!(off <= 0.2 * dist + 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn cursor_path_skips_a_glide_when_already_there() {
+        let mut rng = rand::rng();
+        assert_eq!(
+            cursor_path((5.0, 5.0), (6.0, 5.0), &mut rng),
+            vec![(6.0, 5.0)]
+        );
     }
 }

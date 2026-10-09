@@ -190,6 +190,10 @@ pub struct MajsoulAutoplayConfig {
     /// to the hold. Only ever added, so the configured values stay the
     /// floors the client needs to register a press. `0` disables it.
     pub click_timing_jitter_ms: u32,
+    /// Glide the cursor to each press along a curved, eased path from
+    /// where the last press left it, instead of jumping there. Adds the
+    /// glide's duration (~0.15–0.4 s, by distance) before every hover.
+    pub cursor_glide: bool,
     /// How long to wait for the client's own uplink command
     /// (`inputOperation` / `inputChiPengGang`) after a click sequence
     /// before treating the click as swallowed and pressing again, ms.
@@ -242,6 +246,7 @@ impl Default for MajsoulAutoplayConfig {
             click_hold_ms: 100,
             click_jitter: 0.12,
             click_timing_jitter_ms: 60,
+            cursor_glide: true,
             verify_input_ms: 300,
             click_retries: 2,
             reload_after_failures: 3,
