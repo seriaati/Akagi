@@ -132,6 +132,11 @@ impl AutoplayManager {
             self.ctx.clone(),
             self.mjai_bus.clone(),
         ));
+        tauri::async_runtime::spawn(crate::autoplay::majsoul::emote::emote_watcher(
+            self.cfg.clone(),
+            self.ctx.clone(),
+            self.mjai_bus.clone(),
+        ));
 
         loop {
             tokio::select! {

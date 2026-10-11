@@ -11,6 +11,7 @@
 //!   (`autoplay_majsoul.py`, the main action handler).
 
 pub mod coords;
+pub mod emote;
 pub mod rematch;
 
 use crate::autoplay::delay::{self, DecisionKind, DelayInput};
@@ -771,6 +772,7 @@ mod tests {
             dealer_first_discard_extra_delay_ms: 0,
             auto_rematch: false,
             auto_rematch_limit: 0,
+            emote: Default::default(),
         }
     }
 

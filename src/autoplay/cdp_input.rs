@@ -189,6 +189,28 @@ pub async fn dispatch_click_shaped(
     Ok(())
 }
 
+/// Turn the mouse wheel up `notches` times with the cursor at `(x, y)`
+/// (CSS pixels), a wheel step apart, the way a hand flicks a list back to
+/// its top.
+pub async fn scroll_up(page: &Page, x: f64, y: f64, notches: u32, glide: bool) -> Result<()> {
+    let pt = Point::new(x, y);
+    move_cursor_to(page, pt, glide).await?;
+    *LAST_CURSOR.lock().unwrap_or_else(|e| e.into_inner()) = Some((x, y));
+    for _ in 0..notches {
+        let wheel = DispatchMouseEventParams::builder()
+            .r#type(DispatchMouseEventType::MouseWheel)
+            .x(pt.x)
+            .y(pt.y)
+            .delta_x(0.0)
+            .delta_y(-120.0)
+            .build()
+            .map_err(|e| anyhow!("build mouseWheel: {e}"))?;
+        page.execute(wheel).await.context("CDP mouseWheel")?;
+        tokio::time::sleep(Duration::from_millis(rand::random_range(30..=70))).await;
+    }
+    Ok(())
+}
+
 /// Read the game canvas's `getBoundingClientRect()` via `Runtime.evaluate`.
 ///
 /// Majsoul renders into the first `<canvas>` element on the page; Tenhou
