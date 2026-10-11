@@ -6,7 +6,7 @@
 // `useHistoryStore`. The store is hydrated by `useTauriBridge` on
 // startup and kept current by the `history-recorded` Tauri event.
 
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -43,11 +43,17 @@ export function History() {
   const records = useHistoryStore((s) => s.records)
   const filter = useHistoryStore((s) => s.filter)
   const setFilter = useHistoryStore((s) => s.setFilter)
+  const setDateRange = useHistoryStore((s) => s.setDateRange)
+  const refreshToday = useHistoryStore((s) => s.refreshToday)
   const rule = useHistoryStore((s) => s.rule)
 
   // 3p / 4p are separate analysis modes — never mix. Defaults to 4p.
   const numPlayers: 3 | 4 = filter.num_players === 3 ? 3 : 4
   const setNumPlayers = (np: 3 | 4) => setFilter({ ...filter, num_players: np })
+
+  // The default "today" range is computed at app start; re-anchor it on
+  // open so it rolls over past midnight.
+  useEffect(() => refreshToday(), [refreshToday])
 
   const filtered = useMemo(
     () => records.filter((r) => matchFilter(r, filter)),
@@ -93,6 +99,7 @@ export function History() {
         <FilterCard
           filter={filter}
           onChange={setFilter}
+          onDateChange={setDateRange}
         />
         <div className="lg:col-span-2">
           <PtRuleSelector />
@@ -146,9 +153,11 @@ function matchFilter(
 function FilterCard({
   filter,
   onChange,
+  onDateChange,
 }: {
   filter: ReturnType<typeof useHistoryStore.getState>['filter']
   onChange: (f: ReturnType<typeof useHistoryStore.getState>['filter']) => void
+  onDateChange: (after?: string, before?: string) => void
 }) {
   const { t } = useTranslation()
 
@@ -208,9 +217,7 @@ function FilterCard({
             <DateRangePicker
               after={filter.started_after}
               before={filter.started_before}
-              onChange={(started_after, started_before) =>
-                onChange({ ...filter, started_after, started_before })
-              }
+              onChange={onDateChange}
             />
           </Field>
         </div>
