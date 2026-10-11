@@ -64,6 +64,7 @@ import type {
   DelayModelConfig,
   DetectedBrowser,
   DiscordConfig,
+  EmoteConfig,
   GithubMirrorMode,
   NetworkConfig,
   OverlayConfig,
@@ -716,6 +717,43 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
+const EMOTE_TRIGGERS = ['on_win', 'on_deal_in', 'on_riichi', 'on_match_start', 'on_match_end'] as const
+
+function defaultEmote(): EmoteConfig {
+  return {
+    enabled: false,
+    chance: 0.5,
+    min_gap_secs: 20,
+    on_win: [],
+    on_deal_in: [],
+    on_riichi: [],
+    on_match_start: [],
+    on_match_end: [],
+  }
+}
+
+/** Comma- or space-separated emote-panel slots (0–8). The text is kept as typed
+ *  so a trailing comma survives until the next number. */
+function SlotListInput({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
+  const [text, setText] = useState(value.join(', '))
+  return (
+    <Input
+      value={text}
+      placeholder="0, 3, 5"
+      onChange={(e) => {
+        setText(e.target.value)
+        onChange(
+          e.target.value
+            .split(/[\s,]+/)
+            .filter(Boolean)
+            .map(Number)
+            .filter((n) => Number.isInteger(n) && n >= 0 && n <= 8),
+        )
+      }}
+    />
+  )
+}
+
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex items-center justify-between">
@@ -882,10 +920,12 @@ function AutoplayCard({
       dealer_first_discard_extra_delay_ms: 2000,
       auto_rematch: false,
       auto_rematch_limit: 0,
+      emote: defaultEmote(),
     },
     delay: defaultDelayModel(),
   }
   const delay = ap.delay ?? defaultDelayModel()
+  const emote = ap.majsoul.emote ?? defaultEmote()
   // Hybrid also drives a CDP-controlled browser, so click autoplay works there.
   const captureIsChromium = draft.capture?.mode === 'chromium' || draft.capture?.mode === 'hybrid'
   // Riichi City autoplay runs through the MITM proxy (frame injection), so
@@ -899,6 +939,8 @@ function AutoplayCard({
       ...draft,
       autoplay: { ...ap, majsoul: { ...ap.majsoul, ...patch } },
     })
+  const setEmoteField = (patch: Partial<EmoteConfig>) =>
+    setMajsoulField({ emote: { ...emote, ...patch } })
   const setDelayField = (patch: Partial<DelayModelConfig>) =>
     setDraft({
       ...draft,
@@ -954,6 +996,57 @@ function AutoplayCard({
                   }
                 />
               </Field>
+            )}
+            <Toggle
+              label={t('settings.autoplay.emote')}
+              value={emote.enabled}
+              onChange={(v) => setEmoteField({ enabled: v })}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t('settings.autoplay.emote_help')}
+            </p>
+            {emote.enabled && (
+              <>
+                <Field label={t('settings.autoplay.emote_chance')}>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={100}
+                    value={Math.round(emote.chance * 100)}
+                    onChange={(e) =>
+                      setEmoteField({
+                        chance: Math.min(100, Math.max(0, Number(e.target.value || 0))) / 100,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label={t('settings.autoplay.emote_min_gap')}>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={emote.min_gap_secs}
+                    onChange={(e) =>
+                      setEmoteField({
+                        min_gap_secs: Math.max(0, Number(e.target.value || 0)),
+                      })
+                    }
+                  />
+                </Field>
+                {EMOTE_TRIGGERS.map((key) => (
+                  <Field
+                    key={key}
+                    label={t(`settings.autoplay.emote_${key}`)}
+                    hint={key === 'on_win' ? t('settings.autoplay.emote_slots_hint') : undefined}
+                  >
+                    <SlotListInput
+                      value={emote[key]}
+                      onChange={(slots) => setEmoteField({ [key]: slots })}
+                    />
+                  </Field>
+                ))}
+              </>
             )}
           </>
         )}
