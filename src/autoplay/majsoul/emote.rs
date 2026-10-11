@@ -18,10 +18,17 @@
 //!
 //! An emote is never pressed while a decision window for our seat is open:
 //! the bot's clicks own the board then. It waits for the window to close,
-//! up to [`WINDOW_WAIT`], and is dropped if it does not.
+//! up to [`WINDOW_WAIT`], and is dropped if it does not. Once started it
+//! holds `ctx.input`, so no bot press can land mid-sequence, and it checks
+//! between steps whether the window opened after all — if so it closes the
+//! panel and gives the board back rather than finishing. The panel's state
+//! is read off a screenshot, not assumed, so one left open (by us or by
+//! hand) is used as is and closed afterwards.
 
 use std::sync::Arc;
 use std::time::Duration;
+
+use chromiumoxide::page::Page;
 
 use rand::seq::IndexedRandom;
 use rand::Rng;
@@ -30,8 +37,11 @@ use tokio::sync::RwLock;
 use tokio::time::Instant;
 use tracing::{debug, info, warn};
 
-use crate::autoplay::cdp_input::{dispatch_click, evaluate_canvas_rect, jittered_ms, scroll_up};
-use crate::autoplay::context::AutoplayContext;
+use crate::autoplay::cdp_input::{
+    capture_viewport, dispatch_click, evaluate_canvas_rect, jittered_ms, scroll_up,
+};
+use crate::autoplay::context::{AutoplayContext, CanvasRect};
+use crate::autoplay::majsoul::rematch::{coverage, region};
 use crate::config::{AppConfig, EmoteConfig, Platform};
 use crate::event_bus::MjaiBus;
 use crate::schema::{GameEndReason, MjaiEvent};
@@ -55,9 +65,18 @@ const WHEEL_SLOTS: &[(f64, f64)] = &[
     (13.69, 6.29),
     (15.03, 6.29),
 ];
-/// Pause after opening the panel, before pressing into it: it slides in
-/// from the right edge.
-const PANEL_OPEN_MS: u32 = 500;
+/// The panel slides in from the right edge and back out; this long covers
+/// either.
+const PANEL_SLIDE_MS: u32 = 500;
+/// The open panel's collapse tab, on its left edge: pressed to close the
+/// panel, and sampled (inset from its edges) to tell whether it is open.
+/// Measured from a live panel (canvas 1689×951).
+const PANEL_TAB: (f64, f64) = (11.3, 4.95);
+const PANEL_TAB_SAMPLE: (f64, f64, f64, f64) = (11.2, 4.5, 11.42, 5.4);
+/// Share of the sample that must be the tab's navy, and its arrow's
+/// orange. Measured: ~0.83 and ~0.13 open, 0 and 0 closed.
+const MIN_TAB_NAVY: f64 = 0.5;
+const MIN_TAB_ORANGE: f64 = 0.03;
 /// The panel reopens where it was last scrolled to, so it is wheeled back
 /// to the top before every press. Enough notches for any emote count.
 const SCROLL_NOTCHES: u32 = 10;
@@ -214,7 +233,13 @@ fn schedule(
     })
 }
 
-/// Open the panel and press `slot`. Whether both presses went out.
+/// Open the panel and press `slot`. Whether the emote went out.
+///
+/// Holds `ctx.input` throughout, so the bot's presses cannot interleave
+/// with ours; in return it gives the board back as soon as our decision
+/// window opens. Whatever happens, the panel is left closed: an open one
+/// covers the right end of the action-button and candidate rows, and hides
+/// the button that opens it (whose spot is then a slot).
 async fn press(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext, slot: u32) -> bool {
     let (Some(button), Some(&target)) = (WHEEL_BUTTON, WHEEL_SLOTS.get(slot as usize)) else {
         warn!(
@@ -227,10 +252,17 @@ async fn press(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext, slot: u32) -
         debug!("emote: our decision window stayed open; dropping it");
         return false;
     }
+    // Out of its lock before `input` is taken — never the other way round.
     let Some(page) = ctx.page.read().await.clone() else {
         debug!("emote: no page handle; skipping");
         return false;
     };
+    let _input = ctx.input.lock().await;
+    // The window may have opened while the bot held the lock.
+    if window_open(ctx) {
+        debug!("emote: our decision window opened; dropping it");
+        return false;
+    }
     let rect = match evaluate_canvas_rect(&page).await {
         Ok(rect) => rect,
         Err(e) => {
@@ -249,33 +281,84 @@ async fn press(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext, slot: u32) -
         let hold = jittered_ms(m.click_hold_ms, m.click_timing_jitter_ms);
         dispatch_click(&page, x, y, hover, hold, m.cursor_glide)
     };
+    let is_open = || async {
+        panel_open(&page, &rect)
+            .await
+            .inspect_err(|e| debug!("emote: screen read failed: {e:#}"))
+            .ok()
+    };
 
-    if let Err(e) = click(button).await {
-        warn!("emote: opening the panel failed: {e:#}");
-        return false;
+    let sent = async {
+        match is_open().await {
+            Some(true) => debug!("emote: panel already open"),
+            Some(false) => {
+                if let Err(e) = click(button).await {
+                    warn!("emote: opening the panel failed: {e:#}");
+                    return false;
+                }
+                pause(PANEL_SLIDE_MS).await;
+                if is_open().await != Some(true) {
+                    debug!("emote: the panel did not open; skipping");
+                    return false;
+                }
+            }
+            // Pressing blind could land on the board.
+            None => return false,
+        }
+        if window_open(ctx) {
+            debug!("emote: our decision window opened; giving the board back");
+            return false;
+        }
+        // Over the middle of the grid, so the wheel lands on the list.
+        let middle = WHEEL_SLOTS[WHEEL_SLOTS.len() / 2];
+        let (x, y) = rect.pixel_jittered(middle.0, middle.1, m.click_jitter, &mut rand::rng());
+        if let Err(e) = scroll_up(&page, x, y, SCROLL_NOTCHES, m.cursor_glide).await {
+            warn!("emote: scrolling the panel failed: {e:#}");
+            return false;
+        }
+        pause(SCROLL_SETTLE_MS).await;
+        if window_open(ctx) {
+            debug!("emote: our decision window opened; giving the board back");
+            return false;
+        }
+        if let Err(e) = click(target).await {
+            warn!("emote: press failed: {e:#}");
+            return false;
+        }
+        // Picking an emote closes the panel; let it slide out.
+        pause(PANEL_SLIDE_MS).await;
+        true
     }
-    pause(PANEL_OPEN_MS).await;
-    // Over the middle of the grid, so the wheel lands on the list.
-    let middle = WHEEL_SLOTS[WHEEL_SLOTS.len() / 2];
-    let (x, y) = rect.pixel_jittered(middle.0, middle.1, m.click_jitter, &mut rand::rng());
-    if let Err(e) = scroll_up(&page, x, y, SCROLL_NOTCHES, m.cursor_glide).await {
-        warn!("emote: scrolling the panel failed: {e:#}");
-        return false;
+    .await;
+
+    if is_open().await == Some(true) {
+        let closed = match click(PANEL_TAB).await {
+            Ok(()) => {
+                pause(PANEL_SLIDE_MS).await;
+                is_open().await == Some(false)
+            }
+            Err(e) => {
+                debug!("emote: closing the panel failed: {e:#}");
+                false
+            }
+        };
+        if !closed {
+            warn!("emote: could not close the emote panel");
+        }
     }
-    pause(SCROLL_SETTLE_MS).await;
-    if let Err(e) = click(target).await {
-        warn!("emote: press failed: {e:#}");
-        return false;
-    }
-    true
+    sent
 }
 
 /// The bridge holds a time budget exactly while a decision window for our
 /// seat is open.
+fn window_open(ctx: &AutoplayContext) -> bool {
+    ctx.time_budget.read().ok().and_then(|g| *g).is_some()
+}
+
 async fn wait_for_window_closed(ctx: &AutoplayContext) -> bool {
     let started = Instant::now();
     loop {
-        if ctx.time_budget.read().ok().and_then(|g| *g).is_none() {
+        if !window_open(ctx) {
             return true;
         }
         if started.elapsed() > WINDOW_WAIT {
@@ -283,6 +366,30 @@ async fn wait_for_window_closed(ctx: &AutoplayContext) -> bool {
         }
         tokio::time::sleep(WINDOW_POLL).await;
     }
+}
+
+/// Whether the emote panel is showing, read off its collapse tab: a navy
+/// strip with an orange arrow while open, the table while closed.
+async fn panel_open(page: &Page, rect: &CanvasRect) -> anyhow::Result<bool> {
+    let frame = capture_viewport(page).await?;
+    let pixels = region(&frame, rect, PANEL_TAB_SAMPLE).concat();
+    Ok(tab_showing(&pixels))
+}
+
+fn tab_showing(pixels: &[[u8; 3]]) -> bool {
+    coverage(pixels, is_tab_navy) >= MIN_TAB_NAVY
+        && coverage(pixels, is_tab_orange) >= MIN_TAB_ORANGE
+}
+
+/// The tab's body, ~(22, 43, 77).
+fn is_tab_navy([r, g, b]: [u8; 3]) -> bool {
+    let (r, g, b) = (i16::from(r), i16::from(g), i16::from(b));
+    b > 55 && b - r > 35 && b - g > 15 && r < 60
+}
+
+/// The tab's arrow, ~(222, 146, 55).
+fn is_tab_orange([r, g, b]: [u8; 3]) -> bool {
+    r > 190 && (110..175).contains(&g) && b < 90
 }
 
 #[cfg(test)]
@@ -327,6 +434,25 @@ mod tests {
             on_match_start: vec![slot],
             on_match_end: vec![slot],
         }
+    }
+
+    /// Pixels sampled from the tab area of live screenshots.
+    #[test]
+    fn tab_reads_open_only_with_navy_and_arrow() {
+        let navy = [22, 43, 77];
+        let orange = [222, 146, 55];
+        let table = [[70, 56, 66], [89, 60, 66], [68, 53, 65]];
+        assert!(is_tab_navy(navy) && is_tab_orange(orange));
+        for p in table {
+            assert!(!is_tab_navy(p) && !is_tab_orange(p));
+        }
+        let mut open = vec![navy; 85];
+        open.extend([orange; 13]);
+        open.extend([[43, 54, 74]; 2]);
+        assert!(tab_showing(&open));
+        assert!(!tab_showing(&[table[0]; 100]));
+        // Navy alone (a blue table cloth) is not the tab.
+        assert!(!tab_showing(&[navy; 100]));
     }
 
     #[test]
