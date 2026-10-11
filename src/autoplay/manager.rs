@@ -478,6 +478,9 @@ impl AutoplayManager {
                         );
                         continue;
                     }
+                    // Never mid-way through another task's press (an
+                    // emote); taken before the page lock, as it must be.
+                    let input_guard = self.ctx.input.lock().await;
                     // Need to re-acquire the page handle on each click;
                     // it may have been replaced (tab reload) between
                     // successive clicks within one action.
@@ -507,6 +510,7 @@ impl AutoplayManager {
                         return;
                     }
                     drop(page_guard);
+                    drop(input_guard);
                 }
                 // Riichi City SendFrames never reach this loop — they are
                 // spawned above as per-decision tasks.
@@ -787,6 +791,7 @@ impl AutoplayManager {
                     );
                     continue;
                 }
+                let _input = self.ctx.input.lock().await;
                 let page_guard = self.ctx.page.read().await;
                 let Some(page) = page_guard.as_ref() else {
                     warn!("autoplay: no page handle — abandoning retry for {action:?}");

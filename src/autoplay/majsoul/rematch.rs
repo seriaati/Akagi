@@ -285,7 +285,10 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
         };
         let (x, y) = rect.pixel_jittered(target.0, target.1, jitter, &mut rand::rng());
         info!("auto-rematch: pressing {label}");
-        if let Err(e) = dispatch_click(&page, x, y, hover, hold, glide).await {
+        let input = ctx.input.lock().await;
+        let pressed = dispatch_click(&page, x, y, hover, hold, glide).await;
+        drop(input);
+        if let Err(e) = pressed {
             warn!("auto-rematch: {label} press failed: {e:#}");
             continue;
         }

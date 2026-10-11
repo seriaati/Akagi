@@ -48,6 +48,11 @@ pub struct AutoplayContext {
     /// proxy's client→server relay transmits them. The `in_game` gate is
     /// maintained by the Riichi City bridge. See `autoplay::inject`.
     pub inject: crate::autoplay::inject::SharedInjectBus,
+    /// Held for the length of a click sequence on the page, so presses from
+    /// separate tasks (the bot's plans, auto-emote, auto-rematch) never
+    /// interleave their mouse events. Take it before the `page` read lock,
+    /// never while holding it.
+    pub input: tokio::sync::Mutex<()>,
 }
 
 impl AutoplayContext {
