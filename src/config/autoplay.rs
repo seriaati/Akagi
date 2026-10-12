@@ -234,6 +234,18 @@ pub struct MajsoulAutoplayConfig {
     /// Stop rematching once this many matches have been played back to
     /// back, counting the one the run started from. `0` = no limit.
     pub auto_rematch_limit: u32,
+    /// Each run's limit is drawn from `auto_rematch_limit` ± this many
+    /// matches (never below 1), so runs do not all stop at the same count.
+    /// Ignored when there is no limit.
+    pub auto_rematch_limit_jitter: u32,
+    /// Chance, 0.0–1.0, of a break on the last result screen before
+    /// 再來一場 is pressed.
+    pub auto_rematch_break_chance: f64,
+    /// Shortest break, seconds.
+    pub auto_rematch_break_min_secs: u32,
+    /// Longest break, seconds. Lengths in between are drawn log-uniform,
+    /// so short breaks are more common than long ones.
+    pub auto_rematch_break_max_secs: u32,
 }
 
 impl Default for MajsoulAutoplayConfig {
@@ -253,6 +265,10 @@ impl Default for MajsoulAutoplayConfig {
             dealer_first_discard_extra_delay_ms: 2000,
             auto_rematch: false,
             auto_rematch_limit: 0,
+            auto_rematch_limit_jitter: 2,
+            auto_rematch_break_chance: 0.3,
+            auto_rematch_break_min_secs: 30,
+            auto_rematch_break_max_secs: 300,
         }
     }
 }

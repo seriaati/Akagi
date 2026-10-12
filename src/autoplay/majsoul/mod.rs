@@ -771,6 +771,10 @@ mod tests {
             dealer_first_discard_extra_delay_ms: 0,
             auto_rematch: false,
             auto_rematch_limit: 0,
+            auto_rematch_limit_jitter: 0,
+            auto_rematch_break_chance: 0.0,
+            auto_rematch_break_min_secs: 0,
+            auto_rematch_break_max_secs: 0,
         }
     }
 

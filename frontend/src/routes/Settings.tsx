@@ -882,6 +882,10 @@ function AutoplayCard({
       dealer_first_discard_extra_delay_ms: 2000,
       auto_rematch: false,
       auto_rematch_limit: 0,
+      auto_rematch_limit_jitter: 2,
+      auto_rematch_break_chance: 0.3,
+      auto_rematch_break_min_secs: 30,
+      auto_rematch_break_max_secs: 300,
     },
     delay: defaultDelayModel(),
   }
@@ -937,23 +941,85 @@ function AutoplayCard({
               {t('settings.autoplay.auto_rematch_help')}
             </p>
             {ap.majsoul.auto_rematch && (
-              <Field
-                label={t('settings.autoplay.auto_rematch_limit')}
-                hint={t('settings.autoplay.auto_rematch_limit_hint')}
-              >
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={ap.majsoul.auto_rematch_limit ?? 0}
-                  onChange={(e) =>
-                    // Clamp: a typed negative would fail u32 deserialization.
-                    setMajsoulField({
-                      auto_rematch_limit: Math.max(0, Number(e.target.value || 0)),
-                    })
-                  }
-                />
-              </Field>
+              <>
+                <Field
+                  label={t('settings.autoplay.auto_rematch_limit')}
+                  hint={t('settings.autoplay.auto_rematch_limit_hint')}
+                >
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={ap.majsoul.auto_rematch_limit ?? 0}
+                    onChange={(e) =>
+                      // Clamp: a typed negative would fail u32 deserialization.
+                      setMajsoulField({
+                        auto_rematch_limit: Math.max(0, Number(e.target.value || 0)),
+                      })
+                    }
+                  />
+                </Field>
+                <Field
+                  label={t('settings.autoplay.auto_rematch_limit_jitter')}
+                  hint={t('settings.autoplay.auto_rematch_limit_jitter_hint')}
+                >
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={ap.majsoul.auto_rematch_limit_jitter ?? 2}
+                    onChange={(e) =>
+                      setMajsoulField({
+                        auto_rematch_limit_jitter: Math.max(0, Number(e.target.value || 0)),
+                      })
+                    }
+                  />
+                </Field>
+                <Field
+                  label={t('settings.autoplay.auto_rematch_break_chance')}
+                  hint={t('settings.autoplay.auto_rematch_break_hint')}
+                >
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={100}
+                    value={Math.round((ap.majsoul.auto_rematch_break_chance ?? 0.3) * 100)}
+                    onChange={(e) =>
+                      setMajsoulField({
+                        auto_rematch_break_chance:
+                          Math.min(100, Math.max(0, Number(e.target.value || 0))) / 100,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label={t('settings.autoplay.auto_rematch_break_min_secs')}>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={ap.majsoul.auto_rematch_break_min_secs ?? 30}
+                    onChange={(e) =>
+                      setMajsoulField({
+                        auto_rematch_break_min_secs: Math.max(0, Number(e.target.value || 0)),
+                      })
+                    }
+                  />
+                </Field>
+                <Field label={t('settings.autoplay.auto_rematch_break_max_secs')}>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={ap.majsoul.auto_rematch_break_max_secs ?? 300}
+                    onChange={(e) =>
+                      setMajsoulField({
+                        auto_rematch_break_max_secs: Math.max(0, Number(e.target.value || 0)),
+                      })
+                    }
+                  />
+                </Field>
+              </>
             )}
           </>
         )}

@@ -126,6 +126,12 @@ export type MajsoulAutoplayConfig = {
   /** Stop after this many back-to-back matches, counting the one the run
    *  started from; 0 = no limit. */
   auto_rematch_limit: number
+  /** Each run's limit is drawn within ± this many matches of it. */
+  auto_rematch_limit_jitter: number
+  /** Chance, 0–1, of a break before pressing 再來一場. */
+  auto_rematch_break_chance: number
+  auto_rematch_break_min_secs: number
+  auto_rematch_break_max_secs: number
 }
 
 /** Pre-click delay model parameters. Mirrors

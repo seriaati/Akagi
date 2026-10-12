@@ -24,11 +24,18 @@
 //!
 //! A screen must read the same on two polls in a row, and again after the
 //! pre-press pause, before anything is pressed — a button caught mid-fade
-//! is not acted on.
+//! is not acted on. The pause is log-normal, like a person's reaction
+//! time: mostly near its median, now and then much longer.
+//!
+//! With `majsoul.auto_rematch_break_chance`, a match sometimes ends in a
+//! break: the last screen is left showing for a log-uniform time between
+//! `auto_rematch_break_min_secs` and `auto_rematch_break_max_secs` before
+//! 再來一場 is pressed.
 //!
 //! `majsoul.auto_rematch_limit` caps a run of back-to-back matches: the
 //! match the run started from counts as the first, and once the limit is
-//! reached the result screens are left alone. A run ends — and the count
+//! reached the result screens are left alone. Each run draws its own limit
+//! within `auto_rematch_limit_jitter` of it. A run ends — and the count
 //! starts over with the next match — at the limit, when a rematch fails,
 //! or when a match ends with auto-rematch off.
 
@@ -36,6 +43,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chromiumoxide::page::Page;
+use rand::Rng;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -109,7 +117,13 @@ const MAX_PROMPT_CONFIRMS: u32 = 3;
 const MAX_REWARD_DISMISSALS: u32 = 5;
 const POLL: Duration = Duration::from_secs(1);
 /// The end screens take well under this even when read slowly by hand.
+/// A break adds its own length.
 const GIVE_UP_AFTER: Duration = Duration::from_secs(180);
+/// Median of the pause before each press, seconds, and its log-normal
+/// sigma; the draw is clamped to [`PAUSE_RANGE_SECS`].
+const PAUSE_MEDIAN_SECS: f64 = 1.4;
+const PAUSE_SIGMA: f64 = 0.45;
+const PAUSE_RANGE_SECS: (f64, f64) = (0.6, 6.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Screen {
@@ -176,8 +190,10 @@ async fn enabled(cfg: &Arc<RwLock<AppConfig>>) -> bool {
 /// match (disconnect, abandoned) never rematches.
 pub async fn rematch_watcher(cfg: Arc<RwLock<AppConfig>>, ctx: Arc<AutoplayContext>, bus: MjaiBus) {
     let mut rx = bus.subscribe();
-    // Matches finished in the current run of rematches.
+    // Matches finished in the current run of rematches, and the limit
+    // drawn for that run.
     let mut played = 0u32;
+    let mut run_limit: Option<u32> = None;
     loop {
         match rx.recv().await {
             Ok(MjaiEvent::EndGame {
@@ -185,18 +201,28 @@ pub async fn rematch_watcher(cfg: Arc<RwLock<AppConfig>>, ctx: Arc<AutoplayConte
                 ..
             }) => {
                 if !enabled(&cfg).await {
-                    played = 0;
+                    (played, run_limit) = (0, None);
                     continue;
                 }
                 played += 1;
-                let limit = cfg.read().await.autoplay.majsoul.auto_rematch_limit;
+                let (limit, jitter) = {
+                    let m = &cfg.read().await.autoplay.majsoul;
+                    (m.auto_rematch_limit, m.auto_rematch_limit_jitter)
+                };
+                let limit = *run_limit.get_or_insert_with(|| {
+                    let drawn = draw_limit(limit, jitter, &mut rand::rng());
+                    if drawn > 0 {
+                        info!("auto-rematch: this run stops after {drawn} matches");
+                    }
+                    drawn
+                });
                 if limit_reached(played, limit) {
                     info!("auto-rematch: {played} of {limit} matches played, not queueing again");
-                    played = 0;
+                    (played, run_limit) = (0, None);
                     continue;
                 }
                 if !click_through(&cfg, &ctx).await {
-                    played = 0;
+                    (played, run_limit) = (0, None);
                 }
             }
             Ok(_) | Err(RecvError::Lagged(_)) => {}
@@ -210,11 +236,52 @@ fn limit_reached(played: u32, limit: u32) -> bool {
     limit > 0 && played >= limit
 }
 
+/// A run's limit: uniform within `jitter` of `limit`, never below 1.
+/// `0` (no limit) stays `0`.
+fn draw_limit(limit: u32, jitter: u32, rng: &mut impl Rng) -> u32 {
+    if limit == 0 {
+        return 0;
+    }
+    rng.random_range(limit.saturating_sub(jitter).max(1)..=limit.saturating_add(jitter))
+}
+
+/// The pause before a press: log-normal around [`PAUSE_MEDIAN_SECS`].
+fn reading_pause(rng: &mut impl Rng) -> Duration {
+    let z: f64 = rng.sample(rand_distr::StandardNormal);
+    let secs = (PAUSE_MEDIAN_SECS.ln() + PAUSE_SIGMA * z)
+        .exp()
+        .clamp(PAUSE_RANGE_SECS.0, PAUSE_RANGE_SECS.1);
+    Duration::from_secs_f64(secs)
+}
+
+/// How long to leave the last screen showing before 再來一場: none, or,
+/// with `chance`, a log-uniform draw between `min_secs` and `max_secs`.
+fn break_length(chance: f64, min_secs: u32, max_secs: u32, rng: &mut impl Rng) -> Duration {
+    if !rng.random_bool(chance.clamp(0.0, 1.0)) {
+        return Duration::ZERO;
+    }
+    let lo = f64::from(min_secs.max(1));
+    let hi = f64::from(max_secs).max(lo);
+    Duration::from_secs_f64(rng.random_range(lo.ln()..=hi.ln()).exp())
+}
+
 /// Whether the client ended up queued for another match.
 async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> bool {
     info!("auto-rematch: match over, watching the result screens");
     let queued_before = ctx.input_watch.match_requests();
     let started = Instant::now();
+    let rest = {
+        let guard = cfg.read().await;
+        let m = &guard.autoplay.majsoul;
+        break_length(
+            m.auto_rematch_break_chance,
+            m.auto_rematch_break_min_secs,
+            m.auto_rematch_break_max_secs,
+            &mut rand::rng(),
+        )
+    };
+    // Set once the last screen shows, when there is a break to take.
+    let mut break_until: Option<Instant> = None;
     let (mut confirms, mut play_agains, mut prompts, mut rewards) = (0u32, 0u32, 0u32, 0u32);
     let mut last: Option<Screen> = None;
     loop {
@@ -228,12 +295,15 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
             info!("auto-rematch: switched off, leaving the result screens alone");
             return false;
         }
-        if started.elapsed() > GIVE_UP_AFTER {
+        if started.elapsed() > GIVE_UP_AFTER + rest {
             warn!(
                 "auto-rematch: no rematch after {}s (確認 pressed {confirms}x, 再來一場 {play_agains}x, prompt 確認 {prompts}x, rewards {rewards}x); giving up",
                 GIVE_UP_AFTER.as_secs()
             );
             return false;
+        }
+        if break_until.is_some_and(|until| Instant::now() < until) {
+            continue;
         }
         let Some(page) = ctx.page.read().await.clone() else {
             continue;
@@ -261,10 +331,19 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
             _ => continue,
         };
 
+        if screen == Screen::PlayAgain && !rest.is_zero() && break_until.is_none() {
+            info!(
+                "auto-rematch: taking a {}s break before queueing again",
+                rest.as_secs()
+            );
+            break_until = Some(Instant::now() + rest);
+            continue;
+        }
+
         // A reading beat before pressing, then make sure the screen is
         // still the one we decided on.
-        let pause = 800 + rand::random::<u64>() % 1_700;
-        tokio::time::sleep(Duration::from_millis(pause)).await;
+        let pause = reading_pause(&mut rand::rng());
+        tokio::time::sleep(pause).await;
         let rect = match read_screen(&page).await {
             Ok((now, rect)) if now == screen => rect,
             _ => {
@@ -348,6 +427,7 @@ fn region(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{rngs::StdRng, SeedableRng};
 
     /// Colours sampled from live result screens: the button bodies (light
     /// and shaded ends of each gradient) match, and what surrounds them —
@@ -375,6 +455,54 @@ mod tests {
         let px = [[255, 228, 123], [255, 228, 123], [35, 28, 44], [35, 28, 44]];
         assert_eq!(coverage(&px, is_confirm_yellow), 0.5);
         assert_eq!(coverage(&[], is_confirm_yellow), 0.0);
+    }
+
+    #[test]
+    fn drawn_limit_stays_within_jitter_and_above_zero() {
+        let mut rng = StdRng::seed_from_u64(7);
+        let drawn: Vec<u32> = (0..500).map(|_| draw_limit(5, 2, &mut rng)).collect();
+        assert!(drawn.iter().all(|n| (3..=7).contains(n)));
+        assert!(drawn.contains(&3) && drawn.contains(&7));
+        assert!((0..500).all(|_| draw_limit(1, 3, &mut rng) >= 1));
+        assert!((0..50).all(|_| draw_limit(4, 0, &mut rng) == 4));
+        assert_eq!(draw_limit(0, 3, &mut rng), 0);
+    }
+
+    #[test]
+    fn reading_pause_is_skewed_around_its_median() {
+        let mut rng = StdRng::seed_from_u64(7);
+        let mut secs: Vec<f64> = (0..2_000)
+            .map(|_| reading_pause(&mut rng).as_secs_f64())
+            .collect();
+        secs.sort_by(f64::total_cmp);
+        assert!(secs[0] >= PAUSE_RANGE_SECS.0 && secs[secs.len() - 1] <= PAUSE_RANGE_SECS.1);
+        let median = secs[secs.len() / 2];
+        assert!((median - PAUSE_MEDIAN_SECS).abs() < 0.1, "median {median}");
+        // Right-skewed: the long tail sits further from the median.
+        let (p10, p90) = (secs[secs.len() / 10], secs[secs.len() * 9 / 10]);
+        assert!(p90 - median > median - p10, "p10 {p10}, p90 {p90}");
+    }
+
+    #[test]
+    fn breaks_follow_their_chance_and_bounds() {
+        let mut rng = StdRng::seed_from_u64(7);
+        assert!((0..100).all(|_| break_length(0.0, 30, 300, &mut rng).is_zero()));
+        let rests: Vec<f64> = (0..1_000)
+            .map(|_| break_length(1.0, 30, 300, &mut rng).as_secs_f64())
+            .collect();
+        assert!(rests.iter().all(|s| (30.0..=300.0 + 1e-6).contains(s)));
+        // Log-uniform: half the draws fall under the geometric mean (~95s).
+        let short = rests
+            .iter()
+            .filter(|&&s| s < 30f64.sqrt() * 300f64.sqrt())
+            .count();
+        assert!((400..600).contains(&short), "{short}");
+        let taken = (0..1_000)
+            .filter(|_| !break_length(0.3, 30, 300, &mut rng).is_zero())
+            .count();
+        assert!((230..370).contains(&taken), "{taken}");
+        // A max below the min is the min.
+        assert_eq!(break_length(1.0, 60, 10, &mut rng).as_secs(), 60);
     }
 
     #[test]
