@@ -888,6 +888,7 @@ function AutoplayCard({
       auto_rematch_break_max_secs: 300,
     },
     delay: defaultDelayModel(),
+    play_temperature: 0,
   }
   const delay = ap.delay ?? defaultDelayModel()
   // Hybrid also drives a CDP-controlled browser, so click autoplay works there.
@@ -1023,6 +1024,24 @@ function AutoplayCard({
             )}
           </>
         )}
+        <Field
+          label={t('settings.autoplay.play_temperature')}
+          hint={t('settings.autoplay.play_temperature_hint')}
+        >
+          <Input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={2}
+            step={0.05}
+            value={ap.play_temperature ?? 0}
+            onChange={(e) =>
+              setApField({
+                play_temperature: Math.min(2, Math.max(0, Number(e.target.value || 0))),
+              })
+            }
+          />
+        </Field>
         {/* Delay policy: exactly one of legacy (fixed uniform) or the
             Lua-scripted human-like model is active. */}
         <Field label={t('settings.autoplay.delay_mode')}>

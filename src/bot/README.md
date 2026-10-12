@@ -52,6 +52,13 @@ bridge to them.
   and the table's `num_players`. The manager picks `active_4p` or
   `active_3p` from `BotConfig` based on `num_players`; an empty slot for
   the matching mode means analysis-only for that game (no runner spawned).
+- `sampling` — `autoplay.play_temperature`. Under autoplay only, the
+  manager may swap the reply for another of the top three rows of its
+  `meta.show` card, weighted `prob^(1/T)`, before broadcasting it: a
+  discard for another discard, or a call for a pass. Wins, riichi and
+  anything the card can't name exactly are played as chosen, and the card
+  itself is left alone. Any bot whose card carries `prob` is covered
+  (built-in, Mortal).
 - `native` — the built-in, in-process bot (no Python, no subprocess).
   Two reserved names select it: `akagi-native` (4p) / `akagi-native3p`
   (3p). `NativeBot` always loads the embedded pure-Rust `native_bot` candle

@@ -520,6 +520,8 @@
       "reload_after_failures_hint": "连续这么多次决策完全没有任何操作被接受时，重新加载游戏页面并重连回牌局。0 表示禁用。",
       "dealer_first_discard_extra_delay": "庄家首打额外延迟 (ms)",
       "dealer_first_discard_extra_delay_hint": "庄家被发 14 张牌时雀魂会播放整理手牌动画，期间的点击会被吃掉。约 2000ms 可覆盖大多数设备。",
+      "play_temperature": "出牌温度",
+      "play_temperature_hint": "自动打牌时，不选机器人的第一候选、改选前三候选中其他选项的频率。0 为始终选第一候选。大致：0.25 改变约 6% 的决策，0.5 约 11%，1.0 约 18%。只会把打牌换成另一张打牌，或把鸣牌换成跳过；和牌与立直一定照常执行。适用于显示概率的机器人（内置、Mortal）。",
       "delay_mode": "延迟模型",
       "delay_mode_lua": "Lua 脚本（拟真人，推荐）",
       "delay_mode_legacy": "旧版（固定随机延迟）",

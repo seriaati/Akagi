@@ -520,6 +520,8 @@
       "reload_after_failures_hint": "連續這麼多次決策完全沒有任何操作被接受時，重新載入遊戲頁面並重連回牌局。0 表示停用。",
       "dealer_first_discard_extra_delay": "莊家初打額外延遲 (ms)",
       "dealer_first_discard_extra_delay_hint": "莊家被發 14 張牌時雀魂會播放整理手牌動畫，期間的點擊會被吃掉。約 2000ms 可覆蓋一般裝置。",
+      "play_temperature": "出牌溫度",
+      "play_temperature_hint": "自動打牌時，不選機器人的第一候選、改選前三候選中其他選項的頻率。0 為始終選第一候選。大致：0.25 改變約 6% 的決策，0.5 約 11%，1.0 約 18%。只會把打牌換成另一張打牌，或把鳴牌換成跳過；和牌與立直一定照常執行。適用於顯示機率的機器人（內建、Mortal）。",
       "delay_mode": "延遲模型",
       "delay_mode_lua": "Lua 腳本（擬真人，建議）",
       "delay_mode_legacy": "舊版（固定隨機延遲）",

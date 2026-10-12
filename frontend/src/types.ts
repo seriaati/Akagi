@@ -168,6 +168,9 @@ export type AutoplayConfig = {
   enabled: boolean
   majsoul: MajsoulAutoplayConfig
   delay: DelayModelConfig
+  /** Mirrors `AutoplayConfig::play_temperature`: how often autoplay plays
+   *  one of the bot's other top choices. 0 = always its first. */
+  play_temperature: number
 }
 
 /** Optional cloud-inference settings for the built-in native bot.

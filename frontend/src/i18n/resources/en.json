@@ -520,6 +520,8 @@
       "reload_after_failures_hint": "If this many decisions in a row register no input at all, the game page is reloaded and reconnects into the hand. 0 disables.",
       "dealer_first_discard_extra_delay": "Dealer first-discard extra delay (ms)",
       "dealer_first_discard_extra_delay_hint": "Mahjong Soul plays a hand-sort animation when the dealer is dealt all 14 tiles. Clicks during the animation are dropped. ~2000ms covers most devices.",
+      "play_temperature": "Play temperature",
+      "play_temperature_hint": "How often autoplay plays one of the bot's other top-3 choices instead of its first. 0 = always the first. Roughly: 0.25 changes ~6% of decisions, 0.5 ~11%, 1.0 ~18%. Only swaps a discard for another discard, or a call for a pass; wins and riichi are always played. Works with any bot that shows probabilities (built-in, Mortal).",
       "delay_mode": "Delay model",
       "delay_mode_lua": "Lua script (human-like, recommended)",
       "delay_mode_legacy": "Legacy (fixed random delay)",

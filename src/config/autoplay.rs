@@ -11,6 +11,10 @@ pub struct AutoplayConfig {
     pub majsoul: MajsoulAutoplayConfig,
     /// Pre-click delay model (platform-agnostic). See `autoplay::delay`.
     pub delay: DelayModelConfig,
+    /// How often autoplay plays one of the bot's other top choices instead
+    /// of its first. `0` always plays the first; at `1.0` the choice follows
+    /// the bot's own odds. See `bot::sampling`.
+    pub play_temperature: f64,
 }
 
 /// Which delay policy drives autoplay. Exactly one is active.

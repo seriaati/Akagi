@@ -37,6 +37,7 @@ use crate::bot::native::Breaker;
 use crate::bot::registry::BotRegistry;
 use crate::bot::runner::{BotRunner, SubprocessBot};
 use crate::bot::runtime::PythonRuntime;
+use crate::bot::sampling;
 use crate::bot::sync_guard::SyncGuard;
 use crate::bot::types::BotResponse;
 use crate::config::AppConfig;
@@ -339,11 +340,14 @@ impl BotManager {
         // Read once, before asking: whether autoplay is on gates the reach
         // follow-up (see `ask_runner`). Runtime-toggled — the same flag the
         // autoplay manager re-reads on every response.
-        let autoplay_enabled = self.config.read().await.autoplay.enabled;
+        let (autoplay_enabled, play_temperature) = {
+            let cfg = self.config.read().await;
+            (cfg.autoplay.enabled, cfg.autoplay.play_temperature)
+        };
 
         let batch = std::mem::take(&mut self.pending);
         let started = Instant::now();
-        let (resp, reach_followup) = self.react_or_stand_in(&batch, autoplay_enabled).await;
+        let (mut resp, reach_followup) = self.react_or_stand_in(&batch, autoplay_enabled).await;
         self.history.extend_from_slice(&batch);
         let reaction_ms = started.elapsed().as_millis() as u64;
         // The follow-up fed the runner a reach; drop the bridge's later echo
@@ -351,6 +355,26 @@ impl BotManager {
         if let Some(reach_ev) = reach_followup {
             self.history.push(reach_ev);
             self.drop_next_own_reach = true;
+        }
+        // Only what autoplay plays changes; the HUD card keeps the bot's
+        // own ranking.
+        if let (true, Some(seat)) = (autoplay_enabled, self.actor_id) {
+            let drawn = match batch.last() {
+                Some(MjaiEvent::Tsumo { actor, pai }) if *actor == seat => Some(pai.as_str()),
+                _ => None,
+            };
+            let swapped = sampling::resample(
+                &resp.action,
+                resp.meta.as_ref(),
+                seat,
+                drawn,
+                play_temperature,
+                &mut rand::rng(),
+            );
+            if let Some(alt) = swapped {
+                info!(chosen = ?resp.action, played = ?alt, "play temperature: playing another top choice");
+                resp.action = alt;
+            }
         }
 
         debug!(action = ?resp.action, meta = ?resp.meta, reaction_ms, "bot reacted");
