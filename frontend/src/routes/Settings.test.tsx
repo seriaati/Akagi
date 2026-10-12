@@ -79,16 +79,6 @@ function makeConfig(): AppConfig {
         dealer_first_discard_extra_delay_ms: 0,
         auto_rematch: false,
         auto_rematch_limit: 0,
-        emote: {
-          enabled: false,
-          chance: 0,
-          min_gap_secs: 0,
-          on_win: [],
-          on_deal_in: [],
-          on_riichi: [],
-          on_match_start: [],
-          on_match_end: [],
-        },
       },
       delay: {
         mode: 'legacy',

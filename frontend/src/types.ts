@@ -126,24 +126,6 @@ export type MajsoulAutoplayConfig = {
   /** Stop after this many back-to-back matches, counting the one the run
    *  started from; 0 = no limit. */
   auto_rematch_limit: number
-  /** Emotes pressed on game events. Mahjong Soul only. */
-  emote: EmoteConfig
-}
-
-/** Mirrors `src/config/autoplay.rs::EmoteConfig`. Each `on_*` list holds
- *  emote-panel slots 0–8 (first page, left to right, top to bottom), one
- *  picked at random; empty = trigger off. */
-export type EmoteConfig = {
-  enabled: boolean
-  /** Chance a trigger sends an emote, 0–1. */
-  chance: number
-  /** Least time between two emotes, seconds. */
-  min_gap_secs: number
-  on_win: number[]
-  on_deal_in: number[]
-  on_riichi: number[]
-  on_match_start: number[]
-  on_match_end: number[]
 }
 
 /** Pre-click delay model parameters. Mirrors

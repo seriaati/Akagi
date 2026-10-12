@@ -138,7 +138,7 @@ fn is_rule_gold([r, g, b]: [u8; 3]) -> bool {
     r > 140 && g > 110 && b < 140 && i16::from(r) - i16::from(b) > 40
 }
 
-pub(super) fn coverage(pixels: &[[u8; 3]], colour: fn([u8; 3]) -> bool) -> f64 {
+fn coverage(pixels: &[[u8; 3]], colour: fn([u8; 3]) -> bool) -> f64 {
     if pixels.is_empty() {
         return 0.0;
     }
@@ -335,7 +335,7 @@ async fn read_screen(page: &Page) -> anyhow::Result<(Screen, CanvasRect)> {
 }
 
 /// A 16:9-normalised area of the canvas, row by row.
-pub(super) fn region(
+fn region(
     frame: &Frame,
     rect: &CanvasRect,
     (x0, y0, x1, y1): (f64, f64, f64, f64),

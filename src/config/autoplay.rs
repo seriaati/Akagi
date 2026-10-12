@@ -234,50 +234,6 @@ pub struct MajsoulAutoplayConfig {
     /// Stop rematching once this many matches have been played back to
     /// back, counting the one the run started from. `0` = no limit.
     pub auto_rematch_limit: u32,
-    /// Send an emote from the table's emote panel on game events. See
-    /// `autoplay::majsoul::emote`.
-    pub emote: EmoteConfig,
-}
-
-/// Emotes sent by autoplay. Each trigger has its own list of emote-panel
-/// slots, 0–8: the panel's first page, read left to right, top to bottom.
-/// One is picked at random each time. An empty list leaves that trigger
-/// off.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct EmoteConfig {
-    pub enabled: bool,
-    /// Chance that a trigger sends an emote, 0.0–1.0.
-    pub chance: f64,
-    /// Least time between two emotes, seconds. A trigger inside it is
-    /// skipped.
-    pub min_gap_secs: u32,
-    /// We won (ron or tsumo).
-    pub on_win: Vec<u32>,
-    /// Someone ronned our discard.
-    pub on_deal_in: Vec<u32>,
-    /// Our riichi was accepted.
-    pub on_riichi: Vec<u32>,
-    /// The first hand of a match was dealt.
-    pub on_match_start: Vec<u32>,
-    /// The match ended. Sent over the last hand's result, before the
-    /// result screens replace the table.
-    pub on_match_end: Vec<u32>,
-}
-
-impl Default for EmoteConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            chance: 0.5,
-            min_gap_secs: 20,
-            on_win: Vec::new(),
-            on_deal_in: Vec::new(),
-            on_riichi: Vec::new(),
-            on_match_start: Vec::new(),
-            on_match_end: Vec::new(),
-        }
-    }
 }
 
 impl Default for MajsoulAutoplayConfig {
@@ -297,7 +253,6 @@ impl Default for MajsoulAutoplayConfig {
             dealer_first_discard_extra_delay_ms: 2000,
             auto_rematch: false,
             auto_rematch_limit: 0,
-            emote: EmoteConfig::default(),
         }
     }
 }

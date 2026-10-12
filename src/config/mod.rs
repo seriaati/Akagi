@@ -11,8 +11,7 @@ mod platform;
 mod proxy;
 
 pub use autoplay::{
-    AutoplayConfig, DelayDistribution, DelayMode, DelayModelConfig, EmoteConfig,
-    MajsoulAutoplayConfig,
+    AutoplayConfig, DelayDistribution, DelayMode, DelayModelConfig, MajsoulAutoplayConfig,
 };
 pub use bot::{BotConfig, NativeApiConfig};
 pub use capture::{CaptureConfig, CaptureMode, ChromiumConfig, HttpCaptureConfig};
