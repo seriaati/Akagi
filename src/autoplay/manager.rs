@@ -16,7 +16,7 @@
 use crate::autoplay::cdp_input::{dispatch_click_shaped, evaluate_canvas_rect, jittered_ms};
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
 use crate::autoplay::inject::InjectFrame;
-use crate::autoplay::majsoul::MajsoulAutoplay;
+use crate::autoplay::majsoul::{emote, MajsoulAutoplay};
 use crate::autoplay::platform::{ActionContext, PlatformAutoplay, Step};
 use crate::autoplay::riichi_city::RiichiCityAutoplay;
 use crate::autoplay::tenhou::TenhouAutoplay;
@@ -30,6 +30,7 @@ use chromiumoxide::page::Page;
 use riichienv_core::action::Action;
 use riichienv_core::state::legal_actions::GameStateLegalActions;
 use riichienv_core::state_3p::legal_actions::GameState3PLegalActions;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast::error::RecvError, Mutex, RwLock};
@@ -489,6 +490,16 @@ impl AutoplayManager {
                         warn!("autoplay: no page handle — aborting click sequence");
                         return;
                     };
+                    // An emote may have left its panel open behind a result
+                    // screen; open, it covers the right end of our rows.
+                    // Our window is open, so the table is on screen to
+                    // read it by.
+                    if self.ctx.emote_panel_dirty.swap(false, Ordering::Relaxed)
+                        && !emote::close_panel(page, &rect, &cfg).await
+                    {
+                        warn!("autoplay: could not close the emote panel");
+                        self.ctx.emote_panel_dirty.store(true, Ordering::Relaxed);
+                    }
                     // A lost press usually costs nothing — the decision
                     // window closes and the client passes. A lost *riichi*
                     // press is different: the discard that follows it still

@@ -10,11 +10,15 @@
 //!
 //! Timing follows what players do, measured from captured tables: emotes
 //! after a win land 1.5–5.1 s after `ActionHule` (p10–p90, median 3.5 s),
-//! i.e. over the win screen, and ones after a deal 1.5–8 s after
-//! `ActionNewRound`. None arrive after `NotifyGameEndResult` — the result
-//! screens have replaced the table by then — so the match-end emote goes
-//! out over the last hand's result, which the server announces in the same
-//! instant as the end.
+//! and ones after a deal 1.5–8 s after `ActionNewRound`. None arrive after
+//! `NotifyGameEndResult` — the result screens have replaced the table by
+//! then — so the match-end emote goes out over the last hand's result,
+//! which the server announces in the same instant as the end.
+//!
+//! A win, a deal-in and the match's end are followed by the hand's result
+//! screen, which swallows presses: ours landed up to 4.0 s after
+//! `ActionHule` and were lost from 4.1 s on. Those emotes start at once
+//! and must press their slot by [`PRESS_BY`], or are dropped.
 //!
 //! An emote is never pressed while a decision window for our seat is open:
 //! the bot's clicks own the board then. It waits for the window to close,
@@ -25,6 +29,7 @@
 //! is read off a screenshot, not assumed, so one left open (by us or by
 //! hand) is used as is and closed afterwards.
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -42,7 +47,7 @@ use crate::autoplay::cdp_input::{
 };
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
 use crate::autoplay::majsoul::rematch::{coverage, region};
-use crate::config::{AppConfig, EmoteConfig, Platform};
+use crate::config::{AppConfig, EmoteConfig, MajsoulAutoplayConfig, Platform};
 use crate::event_bus::MjaiBus;
 use crate::schema::{GameEndReason, MjaiEvent};
 
@@ -85,6 +90,17 @@ const SCROLL_SETTLE_MS: u32 = 300;
 
 /// Range of the pause between the trigger and the first press, ms.
 const REACTION_MS: std::ops::RangeInclusive<u64> = 1_500..=5_000;
+/// The same, before a result screen: the sequence itself takes most of
+/// the time players take, so it starts almost at once.
+const QUICK_REACTION_MS: std::ops::RangeInclusive<u64> = 200..=700;
+/// Before a result screen, the slot's press must start this soon after
+/// the trigger: it lands ~0.55 s later, and presses landing past 4.0 s
+/// were swallowed.
+const PRESS_BY: Duration = Duration::from_millis(3_400);
+/// From pressing the panel's button to pressing a slot, at the default
+/// timings: the press, the slide, a screenshot, the wheel and its settle.
+/// A sequence that cannot fit before [`PRESS_BY`] is not started.
+const OPEN_TO_PRESS: Duration = Duration::from_millis(2_300);
 /// How long a due emote may wait for our decision window to close.
 const WINDOW_WAIT: Duration = Duration::from_secs(10);
 const WINDOW_POLL: Duration = Duration::from_millis(250);
@@ -99,6 +115,11 @@ enum Trigger {
 }
 
 impl Trigger {
+    /// Whether the hand's result screen follows within seconds.
+    fn before_result_screen(self) -> bool {
+        matches!(self, Self::Win | Self::DealIn | Self::MatchEnd)
+    }
+
     fn slots(self, cfg: &EmoteConfig) -> &[u32] {
         match self {
             Self::Win => &cfg.on_win,
@@ -150,6 +171,8 @@ struct Pending {
     trigger: Trigger,
     slot: u32,
     due: Instant,
+    /// When the slot's press must start by, if a result screen is coming.
+    press_by: Option<Instant>,
 }
 
 async fn emote_config(cfg: &Arc<RwLock<AppConfig>>) -> Option<EmoteConfig> {
@@ -196,7 +219,7 @@ pub async fn emote_watcher(cfg: Arc<RwLock<AppConfig>>, ctx: Arc<AutoplayContext
                 if emote_config(&cfg).await.is_none() {
                     continue;
                 }
-                if press(&cfg, &ctx, p.slot).await {
+                if press(&cfg, &ctx, p.slot, p.press_by).await {
                     info!("emote: sent slot {} for {:?}", p.slot, p.trigger);
                     last_sent = Some(Instant::now());
                 }
@@ -226,21 +249,36 @@ fn schedule(
     if !rng.random_bool(cfg.chance.clamp(0.0, 1.0)) {
         return None;
     }
+    let now = Instant::now();
+    let (reaction, press_by) = if trigger.before_result_screen() {
+        (QUICK_REACTION_MS, Some(now + PRESS_BY))
+    } else {
+        (REACTION_MS, None)
+    };
     Some(Pending {
         trigger,
         slot,
-        due: Instant::now() + Duration::from_millis(rng.random_range(REACTION_MS)),
+        due: now + Duration::from_millis(rng.random_range(reaction)),
+        press_by,
     })
 }
 
-/// Open the panel and press `slot`. Whether the emote went out.
+/// Open the panel and press `slot`, starting that press by `press_by`.
+/// Whether the emote went out.
 ///
 /// Holds `ctx.input` throughout, so the bot's presses cannot interleave
 /// with ours; in return it gives the board back as soon as our decision
 /// window opens. Whatever happens, the panel is left closed: an open one
 /// covers the right end of the action-button and candidate rows, and hides
-/// the button that opens it (whose spot is then a slot).
-async fn press(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext, slot: u32) -> bool {
+/// the button that opens it (whose spot is then a slot). A result screen
+/// can hide it from that check, so `ctx.emote_panel_dirty` hands a second
+/// look to the bot's next press.
+async fn press(
+    cfg: &Arc<RwLock<AppConfig>>,
+    ctx: &AutoplayContext,
+    slot: u32,
+    press_by: Option<Instant>,
+) -> bool {
     let (Some(button), Some(&target)) = (WHEEL_BUTTON, WHEEL_SLOTS.get(slot as usize)) else {
         warn!(
             "emote: slot {slot} is past the panel's first page (0–{}); skipping",
@@ -288,10 +326,20 @@ async fn press(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext, slot: u32) -
             .ok()
     };
 
+    let late = |by: Option<Instant>| by.is_some_and(|by| Instant::now() > by);
+
     let sent = async {
         match is_open().await {
-            Some(true) => debug!("emote: panel already open"),
+            Some(true) => {
+                debug!("emote: panel already open");
+                ctx.emote_panel_dirty.store(true, Ordering::Relaxed);
+            }
             Some(false) => {
+                if late(press_by.map(|by| by - OPEN_TO_PRESS)) {
+                    debug!("emote: too late to beat the result screen; dropping it");
+                    return false;
+                }
+                ctx.emote_panel_dirty.store(true, Ordering::Relaxed);
                 if let Err(e) = click(button).await {
                     warn!("emote: opening the panel failed: {e:#}");
                     return false;
@@ -321,6 +369,10 @@ async fn press(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext, slot: u32) -
             debug!("emote: our decision window opened; giving the board back");
             return false;
         }
+        if late(press_by) {
+            debug!("emote: the result screen is due; closing the panel instead");
+            return false;
+        }
         if let Err(e) = click(target).await {
             warn!("emote: press failed: {e:#}");
             return false;
@@ -331,22 +383,37 @@ async fn press(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext, slot: u32) -
     }
     .await;
 
-    if is_open().await == Some(true) {
-        let closed = match click(PANEL_TAB).await {
-            Ok(()) => {
-                pause(PANEL_SLIDE_MS).await;
-                is_open().await == Some(false)
-            }
-            Err(e) => {
-                debug!("emote: closing the panel failed: {e:#}");
-                false
-            }
-        };
-        if !closed {
-            warn!("emote: could not close the emote panel");
-        }
+    if !close_panel(&page, &rect, &m).await {
+        warn!("emote: could not close the emote panel");
     }
     sent
+}
+
+/// Close the emote panel if it is showing. Whether it is known to be
+/// closed now. Behind a result screen the panel reads as closed, so only a
+/// read taken over the table settles it.
+pub async fn close_panel(page: &Page, rect: &CanvasRect, m: &MajsoulAutoplayConfig) -> bool {
+    let is_open = || async {
+        panel_open(page, rect)
+            .await
+            .inspect_err(|e| debug!("emote: screen read failed: {e:#}"))
+            .ok()
+    };
+    match is_open().await {
+        Some(false) => return true,
+        Some(true) => {}
+        None => return false,
+    }
+    let (x, y) = rect.pixel_jittered(PANEL_TAB.0, PANEL_TAB.1, m.click_jitter, &mut rand::rng());
+    let hover = jittered_ms(m.hover_delay_ms, m.click_timing_jitter_ms);
+    let hold = jittered_ms(m.click_hold_ms, m.click_timing_jitter_ms);
+    if let Err(e) = dispatch_click(page, x, y, hover, hold, m.cursor_glide).await {
+        debug!("emote: closing the panel failed: {e:#}");
+        return false;
+    }
+    let slide = jittered_ms(PANEL_SLIDE_MS, m.click_timing_jitter_ms);
+    tokio::time::sleep(Duration::from_millis(slide.into())).await;
+    is_open().await == Some(false)
 }
 
 /// The bridge holds a time budget exactly while a decision window for our
@@ -497,6 +564,25 @@ mod tests {
         assert_eq!(p.slot, 3);
     }
 
+    /// Emotes before a result screen must leave room for the whole
+    /// sequence before its deadline; others have no deadline.
+    #[tokio::test]
+    async fn result_screen_triggers_start_in_time_for_their_deadline() {
+        let mut rng = StdRng::seed_from_u64(1);
+        let cfg = cfg_all(0);
+        for trigger in [Trigger::Win, Trigger::DealIn, Trigger::MatchEnd] {
+            for _ in 0..50 {
+                let p = schedule(trigger, &cfg, None, None, &mut rng).unwrap();
+                let by = p.press_by.expect("a deadline");
+                assert!(p.due + OPEN_TO_PRESS < by);
+            }
+        }
+        for trigger in [Trigger::Riichi, Trigger::MatchStart] {
+            let p = schedule(trigger, &cfg, None, None, &mut rng).unwrap();
+            assert!(p.press_by.is_none());
+        }
+    }
+
     #[test]
     fn chance_zero_never_sends() {
         let mut rng = StdRng::seed_from_u64(1);
@@ -532,12 +618,17 @@ mod tests {
     async fn reaction_lands_inside_the_measured_range() {
         let mut rng = StdRng::seed_from_u64(1);
         let cfg = cfg_all(0);
-        for _ in 0..200 {
-            let before = Instant::now();
-            let p = schedule(Trigger::Win, &cfg, None, None, &mut rng).unwrap();
-            let wait = p.due - before;
-            assert!(wait >= Duration::from_millis(*REACTION_MS.start()));
-            assert!(wait <= Duration::from_millis(*REACTION_MS.end() + 50));
+        for (trigger, range) in [
+            (Trigger::Riichi, REACTION_MS),
+            (Trigger::Win, QUICK_REACTION_MS),
+        ] {
+            for _ in 0..200 {
+                let before = Instant::now();
+                let p = schedule(trigger, &cfg, None, None, &mut rng).unwrap();
+                let wait = p.due - before;
+                assert!(wait >= Duration::from_millis(*range.start()));
+                assert!(wait <= Duration::from_millis(*range.end() + 50));
+            }
         }
     }
 }

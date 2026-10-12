@@ -53,6 +53,12 @@ pub struct AutoplayContext {
     /// interleave their mouse events. Take it before the `page` read lock,
     /// never while holding it.
     pub input: tokio::sync::Mutex<()>,
+    /// Set by Majsoul auto-emote whenever it opened the emote panel: a
+    /// result screen that comes up mid-sequence hides the panel from the
+    /// screenshot that would close it. The manager reads the panel and
+    /// closes it, if need be, before its next press (see
+    /// `majsoul::emote::close_panel`).
+    pub emote_panel_dirty: std::sync::atomic::AtomicBool,
 }
 
 impl AutoplayContext {
