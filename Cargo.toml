@@ -1,6 +1,6 @@
 [package]
 name = "akagi"
-version = "3.7.18"
+version = "3.7.19"
 edition = "2021"
 
 [lib]
