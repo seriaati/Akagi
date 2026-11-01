@@ -14,9 +14,10 @@
 //! - the prompt's 確認 and 取消 visible → press its 確認. Done once the
 //!   client's queue request is seen.
 //! - 確認 and 再來一場 both visible → press 再來一場.
-//! - only 確認 visible → press it, at most [`MAX_CONFIRMS`] times: the two
-//!   screens before the last. A third press could only be the final
-//!   screen's 確認.
+//! - only 確認 visible → press it, at most once per screen before the
+//!   last ([`max_confirms`]): two on the CN server, three on the JP server
+//!   (game.mahjongsoul.com), which adds a rank-change screen. One more
+//!   press could only be the final screen's 確認.
 //! - the reward screen (獲得獎勵, a band across the screen between two
 //!   gold rules) → press inside the band to dismiss it. It can come up
 //!   before the result screens, and has no button of its own.
@@ -108,7 +109,11 @@ const MIN_RULE_COVERAGE: f64 = 0.8;
 /// behind them reaches ~0.13 at most.
 const MIN_COVERAGE: f64 = 0.5;
 /// 確認 presses allowed per match end — one per screen before the last.
+/// The JP server shows results, rank change, then chest and bond rewards;
+/// the others fold the rank change in.
 const MAX_CONFIRMS: u32 = 2;
+const MAX_CONFIRMS_JP: u32 = 3;
+const JP_HOST: &str = "game.mahjongsoul.com";
 /// 再來一場 presses allowed before giving up on a client that ignores them.
 const MAX_PLAY_AGAIN: u32 = 3;
 /// Prompt 確認 presses allowed, likewise.
@@ -231,6 +236,14 @@ pub async fn rematch_watcher(cfg: Arc<RwLock<AppConfig>>, ctx: Arc<AutoplayConte
     }
 }
 
+fn max_confirms(page_url: &str) -> u32 {
+    if page_url.contains(JP_HOST) {
+        MAX_CONFIRMS_JP
+    } else {
+        MAX_CONFIRMS
+    }
+}
+
 /// `0` is no limit.
 fn limit_reached(played: u32, limit: u32) -> bool {
     limit > 0 && played >= limit
@@ -319,6 +332,7 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
         if last.replace(screen) != Some(screen) {
             continue;
         }
+        let confirm_cap = max_confirms(&page.url().await.ok().flatten().unwrap_or_default());
         let (target, label) = match screen {
             Screen::Prompt if prompts < MAX_PROMPT_CONFIRMS => {
                 (PROMPT_CONFIRM.centre, "prompt 確認")
@@ -327,7 +341,7 @@ async fn click_through(cfg: &Arc<RwLock<AppConfig>>, ctx: &AutoplayContext) -> b
                 (REWARD_DISMISS, "the reward screen")
             }
             Screen::PlayAgain if play_agains < MAX_PLAY_AGAIN => (PLAY_AGAIN.centre, "再來一場"),
-            Screen::Confirm if confirms < MAX_CONFIRMS => (CONFIRM.centre, "確認"),
+            Screen::Confirm if confirms < confirm_cap => (CONFIRM.centre, "確認"),
             _ => continue,
         };
 
@@ -503,6 +517,14 @@ mod tests {
         assert!((230..370).contains(&taken), "{taken}");
         // A max below the min is the min.
         assert_eq!(break_length(1.0, 60, 10, &mut rng).as_secs(), 60);
+    }
+
+    #[test]
+    fn jp_server_allows_one_more_confirm() {
+        assert_eq!(max_confirms("https://game.mahjongsoul.com/index.html"), 3);
+        assert_eq!(max_confirms("https://game.maj-soul.com/1/"), 2);
+        assert_eq!(max_confirms("https://mahjongsoul.game.yo-star.com/"), 2);
+        assert_eq!(max_confirms(""), 2);
     }
 
     #[test]
